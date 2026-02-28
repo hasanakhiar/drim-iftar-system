@@ -1,0 +1,115 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: #1a202c;
+  color: #e2e8f0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.dashboard {
+  padding: 2rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+h1 {
+  color: #90cdf4;
+  font-size: 2rem;
+  margin-bottom: 1.5rem;
+}
+
+h2 {
+  color: #90cdf4;
+  font-size: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.health-card {
+  background: #2d3748;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.status-indicator {
+  font-size: 1.25rem;
+  margin-right: 0.5rem;
+}
+
+.status-indicator.up {
+  color: #48bb78;
+}
+
+.status-indicator.down {
+  color: #fc8181;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.metric-card {
+  background: #2d3748;
+  border-radius: 8px;
+  padding: 1rem;
+  font-size: 0.9rem;
+  line-height: 1.75;
+}
+
+.chaos-section {
+  background: #2d3748;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-top: 2rem;
+}
+
+.kill-btn {
+  background: #e53e3e;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  margin: 0.25rem;
+  font-size: 0.875rem;
+  transition: background 0.2s;
+}
+
+.kill-btn:hover {
+  background: #c53030;
+}
+
+.revive-btn {
+  background: #48bb78;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  margin: 0.25rem;
+  font-size: 0.875rem;
+  transition: background 0.2s;
+}
+
+.revive-btn:hover {
+  background: #38a169;
+}
+
+.alert-banner {
+  background: #744210;
+  color: #fefcbf;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+}
