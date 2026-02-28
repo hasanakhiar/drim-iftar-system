@@ -1,0 +1,108 @@
+version: '3.9'
+
+services:
+  mongodb:
+    image: mongo:7
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo_data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+
+  identity-provider:
+    build: ./identity-provider
+    ports:
+      - '3001:3001'
+    environment:
+      - PORT=3001
+      - JWT_SECRET=supersecretkey
+      - MONGO_URI=mongodb://mongodb:27017/cafeteria
+    depends_on:
+      - mongodb
+
+  order-gateway:
+    build: ./order-gateway
+    ports:
+      - '3002:3002'
+    environment:
+      - PORT=3002
+      - JWT_SECRET=supersecretkey
+      - REDIS_URL=redis://redis:6379
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+      - IDENTITY_PROVIDER_URL=http://identity-provider:3001
+    depends_on:
+      - redis
+      - rabbitmq
+      - identity-provider
+
+  stock-service:
+    build: ./stock-service
+    ports:
+      - '3003:3003'
+    environment:
+      - PORT=3003
+      - MONGO_URI=mongodb://mongodb:27017/cafeteria
+      - REDIS_URL=redis://redis:6379
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+    depends_on:
+      - mongodb
+      - redis
+      - rabbitmq
+
+  kitchen-queue:
+    build: ./kitchen-queue
+    ports:
+      - '3004:3004'
+    environment:
+      - PORT=3004
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - rabbitmq
+
+  notification-hub:
+    build: ./notification-hub
+    ports:
+      - '3005:3005'
+    environment:
+      - PORT=3005
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+    depends_on:
+      - rabbitmq
+
+  student-ui:
+    build: ./student-ui
+    ports:
+      - '5173:5173'
+    environment:
+      - VITE_API_GATEWAY_URL=http://localhost:3002
+      - VITE_IDENTITY_PROVIDER_URL=http://localhost:3001
+      - VITE_NOTIFICATION_HUB_URL=http://localhost:3005
+    depends_on:
+      - order-gateway
+      - identity-provider
+      - notification-hub
+
+  admin-dashboard:
+    build: ./admin-dashboard
+    ports:
+      - '5174:5174'
+    depends_on:
+      - identity-provider
+      - order-gateway
+      - stock-service
+      - kitchen-queue
+      - notification-hub
+
+volumes:
+  mongo_data:
