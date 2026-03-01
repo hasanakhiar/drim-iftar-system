@@ -22,6 +22,10 @@ app.use((req, res, next) => {
   next();
 });
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://rabbitmq:5672';
+const REDIS_URL = process.env.REDIS_URL || 'redis://redis:6379';
+const Redis = require('ioredis');
+const redis = new Redis(REDIS_URL, { lazyConnect: true, enableOfflineQueue: false });
+redis.connect().catch(() => {});
 
 // Create HTTP + Socket.io server
 const httpServer = http.createServer(app);
@@ -48,10 +52,16 @@ function avgLatency() {
 io.on('connection', (socket) => {
   console.log(`Socket connected: ${socket.id}`);
 
-  socket.on('subscribe', (orderId) => {
+  socket.on('subscribe', async (orderId) => {
     if (orderId) {
       socket.join(`order-${orderId}`);
       console.log(`Socket ${socket.id} subscribed to order-${orderId}`);
+      
+      // Send current status from Redis immediately
+      const status = await redis.get(`order_status:${orderId}`).catch(() => null);
+      if (status) {
+        socket.emit('order-update', { orderId, status, timestamp: new Date().toISOString() });
+      }
     }
   });
 
@@ -65,10 +75,14 @@ let rabbitConn = null;
 let consumeChannel = null;
 
 async function connectRabbit() {
+  if (chaosMode) {
+    setTimeout(connectRabbit, 5000);
+    return;
+  }
   try {
     rabbitConn = await amqplib.connect(RABBITMQ_URL);
-    rabbitConn.on('error', () => { consumeChannel = null; setTimeout(connectRabbit, 5000); });
-    rabbitConn.on('close', () => { consumeChannel = null; setTimeout(connectRabbit, 5000); });
+    rabbitConn.on('error', () => { consumeChannel = null; notificationConsumerTag = null; setTimeout(connectRabbit, 5000); });
+    rabbitConn.on('close', () => { consumeChannel = null; notificationConsumerTag = null; setTimeout(connectRabbit, 5000); });
 
     consumeChannel = await rabbitConn.createChannel();
     await consumeChannel.assertQueue('order-updates', { durable: true });
@@ -79,34 +93,59 @@ async function connectRabbit() {
   } catch (err) {
     console.error('RabbitMQ connection error:', err.message);
     consumeChannel = null;
+    notificationConsumerTag = null;
     setTimeout(connectRabbit, 5000);
   }
 }
 
-function consumeOrderUpdates() {
-  if (!consumeChannel) return;
-  consumeChannel.consume('order-updates', async (msg) => {
-    if (!msg) return;
-    const start = Date.now();
-    try {
-      const data = JSON.parse(msg.content.toString());
-      const { orderId, status, timestamp } = data;
+let notificationConsumerTag = null;
 
-      // Emit to the order's room via Socket.io
-      io.to(`order-${orderId}`).emit('order-update', { orderId, status, timestamp });
+async function consumeOrderUpdates() {
+  if (chaosMode) return;
+  if (!consumeChannel || notificationConsumerTag) return;
+  console.log('Starting notification-hub consumer...');
+  try {
+    const result = await consumeChannel.consume('order-updates', async (msg) => {
+      if (!msg) return;
+      const start = Date.now();
+      try {
+        const data = JSON.parse(msg.content.toString());
+        const { orderId, status, timestamp } = data;
 
-      consumeChannel.ack(msg);
-      recordNotification(Date.now() - start);
-    } catch (err) {
-      console.error('Error processing order-update message:', err.message);
-      recordNotification(Date.now() - start, true);
-      consumeChannel.nack(msg, false, false);
-    }
-  });
+        // Emit to the order's room via Socket.io
+        io.to(`order-${orderId}`).emit('order-update', { orderId, status, timestamp });
+
+        if (consumeChannel) consumeChannel.ack(msg);
+        recordNotification(Date.now() - start);
+      } catch (err) {
+        console.error('Error processing order-update message:', err.message);
+        recordNotification(Date.now() - start, true);
+        if (consumeChannel) consumeChannel.nack(msg, false, false);
+      }
+    });
+    notificationConsumerTag = result.consumerTag;
+  } catch (err) {
+    console.error('Failed to start consumer:', err.message);
+    notificationConsumerTag = null;
+  }
+}
+
+async function stopConsuming() {
+  if (rabbitConn) {
+    console.log('Closing RabbitMQ connection (Chaos Mode)...');
+    const conn = rabbitConn;
+    rabbitConn = null;
+    await conn.close().catch(() => {});
+    consumeChannel = null;
+    notificationConsumerTag = null;
+  }
 }
 
 // GET /health
 app.get('/health', async (req, res) => {
+  if (chaosMode) {
+    return res.status(503).json({ status: 'down', service: 'notification-hub', reason: 'chaos mode' });
+  }
   const rabbitUp = consumeChannel !== null;
   return res.status(rabbitUp ? 200 : 503).json({
     status: rabbitUp ? 'ok' : 'degraded',
@@ -126,16 +165,20 @@ app.get('/metrics', (req, res) => {
 });
 
 // POST /chaos/kill
-app.post('/chaos/kill', (req, res) => {
+app.post('/chaos/kill', async (req, res) => {
   chaosMode = true;
-  console.log('Chaos mode ENABLED - service will reject requests');
+  await stopConsuming();
+  // Disconnect all clients for realism
+  io.disconnectSockets(true);
+  console.log('Chaos mode ENABLED - service will reject requests, stop processing, and disconnect clients');
   return res.json({ status: 'killed', chaosMode: true });
 });
 
 // POST /chaos/revive
-app.post('/chaos/revive', (req, res) => {
+app.post('/chaos/revive', async (req, res) => {
   chaosMode = false;
-  console.log('Chaos mode DISABLED - service operational');
+  await consumeOrderUpdates();
+  console.log('Chaos mode DISABLED - service operational and processing resumed');
   return res.json({ status: 'alive', chaosMode: false });
 });
 

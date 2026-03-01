@@ -59,10 +59,14 @@ let rabbitChannel = null;
 let statusChannel = null;
 
 async function connectRabbit() {
+  if (chaosMode) {
+    setTimeout(connectRabbit, 5000);
+    return;
+  }
   try {
     rabbitConn = await amqplib.connect(RABBITMQ_URL);
-    rabbitConn.on('error', () => { rabbitChannel = null; statusChannel = null; setTimeout(connectRabbit, 5000); });
-    rabbitConn.on('close', () => { rabbitChannel = null; statusChannel = null; setTimeout(connectRabbit, 5000); });
+    rabbitConn.on('error', () => { rabbitChannel = null; statusChannel = null; stockConsumerTag = null; setTimeout(connectRabbit, 5000); });
+    rabbitConn.on('close', () => { rabbitChannel = null; statusChannel = null; stockConsumerTag = null; setTimeout(connectRabbit, 5000); });
 
     rabbitChannel = await rabbitConn.createChannel();
     await rabbitChannel.assertQueue('orders', { durable: true });
@@ -70,6 +74,9 @@ async function connectRabbit() {
 
     statusChannel = await rabbitConn.createChannel();
     await statusChannel.assertQueue('order-status', { durable: true });
+    
+    // Also assert order-updates for UI feedback
+    await statusChannel.assertQueue('order-updates', { durable: true });
 
     console.log('Connected to RabbitMQ');
     consumeOrders();
@@ -77,6 +84,7 @@ async function connectRabbit() {
     console.error('RabbitMQ connection error:', err.message);
     rabbitChannel = null;
     statusChannel = null;
+    stockConsumerTag = null;
     setTimeout(connectRabbit, 5000);
   }
 }
@@ -116,7 +124,12 @@ async function processOrderWithRetry(order, maxRetries = 3) {
 
     // Publish to order-status queue
     const statusMsg = { orderId, status: 'stock_verified', itemId, timestamp: new Date().toISOString() };
+    const ORDER_STATUS_EXPIRY = 3600;
+    await redis.set(`order_status:${orderId}`, 'stock_verified', 'EX', ORDER_STATUS_EXPIRY).catch(() => {});
     statusChannel.sendToQueue('order-status', Buffer.from(JSON.stringify(statusMsg)), { persistent: true });
+    
+    // Also publish to order-updates for UI
+    statusChannel.sendToQueue('order-updates', Buffer.from(JSON.stringify(statusMsg)), { persistent: true });
 
     // Mark as processed (idempotency)
     await redis.set(`processed:${orderId}`, '1', 'EX', 86400).catch(() => {});
@@ -127,22 +140,44 @@ async function processOrderWithRetry(order, maxRetries = 3) {
   throw new Error(`Failed to update stock for ${itemId} after ${maxRetries} retries (optimistic lock)`);
 }
 
-function consumeOrders() {
-  if (!rabbitChannel) return;
-  rabbitChannel.consume('orders', async (msg) => {
-    if (!msg) return;
-    const start = Date.now();
-    try {
-      const order = JSON.parse(msg.content.toString());
-      await processOrderWithRetry(order);
-      rabbitChannel.ack(msg);
-      recordRequest(Date.now() - start);
-    } catch (err) {
-      console.error('Error processing order:', err.message);
-      recordRequest(Date.now() - start, true);
-      rabbitChannel.nack(msg, false, false); // Dead-letter, don't requeue
-    }
-  });
+let stockConsumerTag = null;
+
+async function consumeOrders() {
+  if (chaosMode) return;
+  if (!rabbitChannel || stockConsumerTag) return;
+  console.log('Starting stock-service consumer...');
+  try {
+    const result = await rabbitChannel.consume('orders', async (msg) => {
+      if (!msg) return;
+      const start = Date.now();
+      try {
+        const order = JSON.parse(msg.content.toString());
+        await processOrderWithRetry(order);
+        if (rabbitChannel) rabbitChannel.ack(msg);
+        recordRequest(Date.now() - start);
+      } catch (err) {
+        console.error('Error processing order:', err.message);
+        recordRequest(Date.now() - start, true);
+        if (rabbitChannel) rabbitChannel.nack(msg, false, false); // Dead-letter, don't requeue
+      }
+    });
+    stockConsumerTag = result.consumerTag;
+  } catch (err) {
+    console.error('Failed to start consumer:', err.message);
+    stockConsumerTag = null;
+  }
+}
+
+async function stopConsuming() {
+  if (rabbitConn) {
+    console.log('Closing RabbitMQ connection (Chaos Mode)...');
+    const conn = rabbitConn;
+    rabbitConn = null;
+    await conn.close().catch(() => {});
+    rabbitChannel = null;
+    statusChannel = null;
+    stockConsumerTag = null;
+  }
 }
 
 // POST /stock
@@ -183,6 +218,9 @@ app.get('/stock/:itemId', async (req, res) => {
 
 // GET /health
 app.get('/health', async (req, res) => {
+  if (chaosMode) {
+    return res.status(503).json({ status: 'down', service: 'stock-service', reason: 'chaos mode' });
+  }
   const mongoUp = mongoose.connection.readyState === 1;
   let redisUp = false;
   try { await redis.ping(); redisUp = true; } catch {}
@@ -206,16 +244,18 @@ app.get('/metrics', (req, res) => {
 });
 
 // POST /chaos/kill
-app.post('/chaos/kill', (req, res) => {
+app.post('/chaos/kill', async (req, res) => {
   chaosMode = true;
-  console.log('Chaos mode ENABLED - service will reject requests');
+  await stopConsuming();
+  console.log('Chaos mode ENABLED - service will reject requests and stop processing');
   return res.json({ status: 'killed', chaosMode: true });
 });
 
 // POST /chaos/revive
-app.post('/chaos/revive', (req, res) => {
+app.post('/chaos/revive', async (req, res) => {
   chaosMode = false;
-  console.log('Chaos mode DISABLED - service operational');
+  await consumeOrders();
+  console.log('Chaos mode DISABLED - service operational and processing resumed');
   return res.json({ status: 'alive', chaosMode: false });
 });
 

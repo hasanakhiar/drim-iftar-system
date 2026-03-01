@@ -149,12 +149,15 @@ app.post('/orders', authMiddleware, async (req, res) => {
     };
 
     orderStore[orderId] = order;
+    const ORDER_STATUS_EXPIRY = 3600;
+    await redis.set(`order_status:${orderId}`, 'pending', 'EX', ORDER_STATUS_EXPIRY).catch(() => {});
 
     rabbitChannel.sendToQueue('orders', Buffer.from(JSON.stringify(order)), { persistent: true });
     
     // Publish confirmed status to notification hub for real-time feedback
     if (notificationChannel) {
       const confirmedMsg = { orderId, status: 'confirmed', timestamp: new Date().toISOString() };
+      await redis.set(`order_status:${orderId}`, 'confirmed', 'EX', ORDER_STATUS_EXPIRY).catch(() => {});
       notificationChannel.sendToQueue('order-updates', Buffer.from(JSON.stringify(confirmedMsg)), { persistent: true });
     }
 
