@@ -12,6 +12,7 @@ const SERVICES = [
 export default function ChaosToggle() {
   const [killedServices, setKilledServices] = useState({})
   const [loading, setLoading] = useState({})
+  const [modal, setModal] = useState({ show: false, message: '' })
 
   useEffect(() => {
     const fetchStatuses = async () => {
@@ -40,7 +41,7 @@ export default function ChaosToggle() {
       await axios.post(`${service.url}/chaos/${endpoint}`, {}, { timeout: 3000 })
       setKilledServices(prev => ({ ...prev, [service.key]: !isKilled }))
     } catch (e) {
-      alert(`Failed to ${endpoint} ${service.name}`)
+      setModal({ show: true, message: `Failed to ${endpoint} ${service.name}. Service might be unreachable.` })
     } finally {
       setLoading(prev => ({ ...prev, [service.key]: false }))
     }
@@ -48,6 +49,21 @@ export default function ChaosToggle() {
 
   return (
     <div className="card">
+      {/* Custom Modal */}
+      {modal.show && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h2 style={{ marginBottom: '1rem', color: 'var(--danger)' }}>⚠️ Chaos Control Error</h2>
+            <p style={{ color: 'var(--text-main)', marginBottom: '2rem' }}>{modal.message}</p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn btn-primary" onClick={() => setModal({ show: false, message: '' })}>
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
         <span style={{ color: 'var(--warning)' }}>⚡</span> Chaos Controls
       </h3>

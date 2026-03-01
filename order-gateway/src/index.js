@@ -218,6 +218,18 @@ app.get('/admin/orders', async (req, res) => {
   }
 });
 
+// GET /admin/student-stats - Aggregate orders per student
+app.get('/admin/student-stats', async (req, res) => {
+  try {
+    const stats = await Order.aggregate([
+      { $group: { _id: "$studentId", orderCount: { $sum: 1 } } }
+    ]);
+    return res.json(stats);
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /orders/:orderId
 app.get('/orders/:orderId', authMiddleware, async (req, res) => {
   const start = Date.now();

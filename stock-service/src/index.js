@@ -190,7 +190,7 @@ async function stopConsuming() {
   }
 }
 
-// Endpoints
+// GET /stock
 app.get('/stock', async (req, res) => {
   try {
     const items = await Item.find({});
@@ -199,6 +199,37 @@ app.get('/stock', async (req, res) => {
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// POST /stock - Create or Update item
+app.post('/stock', async (req, res) => {
+  try {
+    const { itemId, name, stock } = req.body;
+    if (!itemId || !name) return res.status(400).json({ error: 'itemId and name are required' });
+    
+    const item = await Item.findOneAndUpdate(
+      { itemId },
+      { name, stock },
+      { upsert: true, new: true }
+    );
+    await redis.set(`stock:${itemId}`, stock).catch(() => {});
+    return res.json(item);
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /stock/:itemId
+app.delete('/stock/:itemId', async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    await Item.deleteOne({ itemId });
+    await redis.del(`stock:${itemId}`).catch(() => {});
+    return res.json({ message: 'Item deleted' });
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 
 app.get('/health', async (req, res) => {
   if (chaosMode) return res.status(503).json({ status: 'down' });

@@ -1,15 +1,13 @@
 import React, { useState } from 'react'
 import axios from 'axios'
 
-export default function Login({ setToken }) {
+export default function Login({ setToken, showModal }) {
   const [studentId, setStudentId] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setError('')
     setLoading(true)
     try {
       const { data } = await axios.post('http://localhost:3001/auth/login', {
@@ -18,7 +16,7 @@ export default function Login({ setToken }) {
       })
       setToken(data.token)
     } catch (err) {
-      setError(err.response?.data?.error || 'Login failed. Please try again.')
+      showModal('❌ Login Failed', err.response?.data?.error || 'Invalid Student ID or password.', 'error')
     } finally {
       setLoading(false)
     }
@@ -52,7 +50,6 @@ export default function Login({ setToken }) {
             style={{ width: '100%' }}
           />
         </div>
-        {error && <p style={{ color: '#e53e3e', fontSize: '0.875rem' }}>{error}</p>}
         <button 
           className="btn btn-primary" 
           type="submit" 
@@ -62,7 +59,7 @@ export default function Login({ setToken }) {
           {loading ? 'Logging in…' : 'Login'}
         </button>
       </form>
-      <div style={{ marginTop: '1.5rem', fontSize: '0.8rem', color: '#718096', textAlign: 'center' }}>
+      <div style={{ marginTop: '1.5rem', fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center' }}>
         Try STU001 / password123
       </div>
     </div>

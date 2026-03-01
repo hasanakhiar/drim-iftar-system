@@ -41,12 +41,38 @@ const studentSchema = new mongoose.Schema({
 });
 const Student = mongoose.model('Student', studentSchema);
 
-// Chaos middleware - reject all requests except health and chaos endpoints
+// Chaos middleware
 app.use((req, res, next) => {
   if (chaosMode && !req.path.startsWith('/health') && !req.path.startsWith('/chaos') && !req.path.startsWith('/metrics')) {
     return res.status(503).json({ error: 'Service temporarily unavailable (chaos mode)' });
   }
   next();
+});
+
+// GET /students - List all students (Admin use)
+app.get('/students', async (req, res) => {
+  try {
+    const students = await Student.find({}, { password: 0 }); // Don't return passwords
+    return res.json(students);
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /students - Create new student (Admin use)
+app.post('/students', async (req, res) => {
+  try {
+    const { studentId, password, name } = req.body;
+    if (!studentId || !password || !name) {
+      return res.status(400).json({ error: 'studentId, password, and name are required' });
+    }
+    const hashed = await bcrypt.hash(password, 10);
+    const student = await Student.create({ studentId, password: hashed, name });
+    return res.status(201).json({ studentId: student.studentId, name: student.name });
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ error: 'Student ID already exists' });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Per-student rate limiter (max 3 login attempts per minute)
@@ -111,72 +137,31 @@ app.post('/auth/verify', async (req, res) => {
   }
 });
 
-// GET /health
+// Standard Endpoints
 app.get('/health', async (req, res) => {
-  if (chaosMode) {
-    return res.status(503).json({ status: 'down', service: 'identity-provider', reason: 'chaos mode' });
-  }
+  if (chaosMode) return res.status(503).json({ status: 'down' });
   const mongoUp = mongoose.connection.readyState === 1;
-  const status = mongoUp ? 'ok' : 'degraded';
-  const code = mongoUp ? 200 : 503;
-  return res.status(code).json({
-    status,
-    service: 'identity-provider',
-    dependencies: { mongodb: mongoUp ? 'up' : 'down' },
-  });
+  return res.status(mongoUp ? 200 : 503).json({ status: mongoUp ? 'ok' : 'down' });
 });
 
-// GET /metrics
-app.get('/metrics', (req, res) => {
-  return res.json({
-    service: 'identity-provider',
-    totalRequests: metrics.totalRequests,
-    failureCount: metrics.failureCount,
-    avgLatency: avgLatency(),
-  });
-});
+app.get('/metrics', (req, res) => res.json({ service: 'identity-provider', totalRequests: metrics.totalRequests, failureCount: metrics.failureCount, avgLatency: avgLatency() }));
+app.get('/chaos/status', (req, res) => res.json({ chaosMode }));
+app.post('/chaos/kill', (req, res) => { chaosMode = true; return res.json({ status: 'killed', chaosMode: true }); });
+app.post('/chaos/revive', (req, res) => { chaosMode = false; return res.json({ status: 'alive', chaosMode: false }); });
 
-// GET /chaos/status
-app.get('/chaos/status', (req, res) => {
-  return res.json({ chaosMode });
-});
-
-// POST /chaos/kill
-app.post('/chaos/kill', (req, res) => {
-  chaosMode = true;
-  console.log('Chaos mode ENABLED - service will reject requests');
-  return res.json({ status: 'killed', chaosMode: true });
-});
-
-// POST /chaos/revive
-app.post('/chaos/revive', (req, res) => {
-  chaosMode = false;
-  console.log('Chaos mode DISABLED - service operational');
-  return res.json({ status: 'alive', chaosMode: false });
-});
-
-// Connect to MongoDB and seed data
 async function connectAndSeed() {
   try {
     await mongoose.connect(MONGO_URI);
-    console.log('Connected to MongoDB');
-
     const existing = await Student.findOne({ studentId: 'STU001' });
     if (!existing) {
       const hashed = await bcrypt.hash('password123', 10);
       await Student.create({ studentId: 'STU001', password: hashed, name: 'Test Student' });
-      console.log('Seeded student STU001');
     }
   } catch (err) {
-    console.error('MongoDB connection error:', err.message);
     setTimeout(connectAndSeed, 5000);
   }
 }
 
 connectAndSeed();
-
-const server = app.listen(PORT, () => {
-  console.log(`identity-provider running on port ${PORT}`);
-});
-
-module.exports = { app, server };
+app.listen(PORT, () => console.log(`identity-provider running on port ${PORT}`));
+module.exports = { app };

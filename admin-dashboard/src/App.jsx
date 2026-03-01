@@ -4,6 +4,7 @@ import LiveMetrics from './components/LiveMetrics'
 import ChaosToggle from './components/ChaosToggle'
 import InventoryManager from './components/InventoryManager'
 import OrderHistory from './components/OrderHistory'
+import StudentManager from './components/StudentManager'
 
 function App() {
   const [activeTab, setActiveTab] = useState('overview')
@@ -28,6 +29,12 @@ function App() {
             📊 System Overview
           </button>
           <button 
+            className={`nav-btn ${activeTab === 'students' ? 'active' : ''}`}
+            onClick={() => setActiveTab('students')}
+          >
+            🎓 Students
+          </button>
+          <button 
             className={`nav-btn ${activeTab === 'inventory' ? 'active' : ''}`}
             onClick={() => setActiveTab('inventory')}
           >
@@ -47,7 +54,7 @@ function App() {
 
         <div style={{ padding: '1rem', borderTop: '1px solid var(--border)', marginTop: '1rem' }}>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            Microservices V2.5
+            Microservices V3.0
           </div>
         </div>
       </aside>
@@ -71,11 +78,21 @@ function App() {
           </>
         )}
 
+        {activeTab === 'students' && (
+          <>
+            <header className="section-header" style={{ marginBottom: '2rem' }}>
+              <h2>Student Management</h2>
+              <p style={{ color: 'var(--text-muted)' }}>Create new student accounts and track their order activity</p>
+            </header>
+            <StudentManager />
+          </>
+        )}
+
         {activeTab === 'inventory' && (
           <>
             <header className="section-header" style={{ marginBottom: '2rem' }}>
               <h2>Inventory Management</h2>
-              <p style={{ color: 'var(--text-muted)' }}>Control food items and stock levels</p>
+              <p style={{ color: 'var(--text-muted)' }}>Control food items, stock levels, and item lifecycle</p>
             </header>
             <InventoryManager />
           </>

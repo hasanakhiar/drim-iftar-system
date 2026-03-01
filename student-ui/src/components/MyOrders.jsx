@@ -4,6 +4,8 @@ import axios from 'axios'
 export default function MyOrders({ onSelectOrder }) {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 5
 
   const fetchOrders = async () => {
     try {
@@ -25,11 +27,44 @@ export default function MyOrders({ onSelectOrder }) {
 
   if (loading) return <div style={{ color: 'var(--text-main)' }}>Loading orders...</div>
 
+  // Pagination logic
+  const totalPages = Math.ceil(orders.length / itemsPerPage)
+  const currentOrders = orders.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+
+  const renderPagination = () => {
+    if (totalPages <= 1) return null
+    const pages = []
+    const windowSize = 1
+    pages.push(1)
+    if (currentPage > windowSize + 2) pages.push('...')
+    for (let i = Math.max(2, currentPage - windowSize); i <= Math.min(totalPages - 1, currentPage + windowSize); i++) {
+      pages.push(i)
+    }
+    if (currentPage < totalPages - windowSize - 1) pages.push('...')
+    if (totalPages > 1) pages.push(totalPages)
+
+    return (
+      <div className="pagination">
+        <button className="page-btn jump" title="First" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>|&lt;</button>
+        <button className="page-btn jump" title="-10" onClick={() => setCurrentPage(Math.max(1, currentPage - 10))} disabled={currentPage === 1}>&lt;&lt;</button>
+        {pages.map((p, i) => (
+          p === '...' ? (
+            <span key={`sep-${i}`} style={{ color: 'var(--text-muted)', padding: '0 0.5rem' }}>...</span>
+          ) : (
+            <button key={p} className={`page-btn ${currentPage === p ? 'active' : ''}`} onClick={() => setCurrentPage(p)}>{p}</button>
+          )
+        ))}
+        <button className="page-btn jump" title="+10" onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 10))} disabled={currentPage === totalPages}>&gt;&gt;</button>
+        <button className="page-btn jump" title="Last" onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}>&gt;|</button>
+      </div>
+    )
+  }
+
   return (
     <div className="my-orders card">
       <h3 style={{ marginBottom: '1.5rem' }}>📜 My Order History</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        {orders.map((order) => (
+        {currentOrders.map((order) => (
           <div 
             key={order.orderId} 
             style={{ 
@@ -71,6 +106,7 @@ export default function MyOrders({ onSelectOrder }) {
           </div>
         )}
       </div>
+      {renderPagination()}
     </div>
   )
 }

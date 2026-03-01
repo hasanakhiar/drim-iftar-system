@@ -11,13 +11,15 @@ export default function App() {
   const [view, setView] = useState('menu')
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light')
   const [hubOnline, setHubOnline] = useState(true)
+  
+  // Global Modal State
+  const [modal, setModal] = useState({ show: false, title: '', message: '', type: 'info' })
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('theme', theme)
   }, [theme])
 
-  // Global Hub Health Check
   useEffect(() => {
     const checkHub = async () => {
       try {
@@ -49,8 +51,29 @@ export default function App() {
 
   const toggleTheme = () => setTheme(theme === 'light' ? 'dark' : 'light')
 
+  const showModal = (title, message, type = 'info') => {
+    setModal({ show: true, title, message, type })
+  }
+
   return (
     <div className="container">
+      {/* Global Elegant Modal */}
+      {modal.show && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '400px' }}>
+            <h2 style={{ marginBottom: '1rem', color: modal.type === 'error' ? 'var(--danger)' : 'var(--accent)' }}>
+              {modal.title}
+            </h2>
+            <p style={{ color: 'var(--text-main)', marginBottom: '2rem' }}>{modal.message}</p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn btn-primary" onClick={() => setModal({ ...modal, show: false })}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {!hubOnline && (
         <div style={{ 
           backgroundColor: 'var(--danger)', 
@@ -102,12 +125,12 @@ export default function App() {
         </div>
       </header>
 
-      {!token && <Login setToken={handleSetToken} />}
+      {!token && <Login setToken={handleSetToken} showModal={showModal} />}
       
       {token && !orderId && (
         <div className="fade-in">
           {view === 'menu' ? (
-            <OrderPlacer onOrderPlaced={setOrderId} />
+            <OrderPlacer onOrderPlaced={setOrderId} showModal={showModal} />
           ) : (
             <MyOrders onSelectOrder={setOrderId} />
           )}

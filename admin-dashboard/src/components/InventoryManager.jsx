@@ -3,8 +3,12 @@ import axios from 'axios'
 
 export default function InventoryManager() {
   const [items, setItems] = useState([])
-  const [newItem, setNewItem] = useState({ itemId: '', name: '', stock: 0 })
+  const [formData, setFormData] = useState({ itemId: '', name: '', stock: 0 })
   const [loading, setLoading] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  
+  // Modal state
+  const [modal, setModal] = useState({ show: false, type: '', data: null })
 
   const fetchStock = async () => {
     try {
@@ -23,30 +27,105 @@ export default function InventoryManager() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (isEditing) {
+      setModal({ show: true, type: 'update', data: formData })
+    } else {
+      executeSubmit()
+    }
+  }
+
+  const executeSubmit = async () => {
     setLoading(true)
     try {
-      await axios.post('http://localhost:3003/stock', newItem)
-      setNewItem({ itemId: '', name: '', stock: 0 })
+      await axios.post('http://localhost:3003/stock', formData)
+      setFormData({ itemId: '', name: '', stock: 0 })
+      setIsEditing(false)
+      setModal({ show: false, type: '', data: null })
       fetchStock()
     } catch (e) {
-      alert('Failed to update stock')
+      alert('Operation failed')
     } finally {
       setLoading(false)
     }
   }
 
+  const handleEdit = (item) => {
+    setFormData({ itemId: item.itemId, name: item.name, stock: item.stock })
+    setIsEditing(true)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const handleDeleteClick = (item) => {
+    setModal({ show: true, type: 'delete', data: item })
+  }
+
+  const executeDelete = async () => {
+    if (!modal.data) return
+    setLoading(true)
+    try {
+      await axios.delete(`http://localhost:3003/stock/${modal.data.itemId}`)
+      setModal({ show: false, type: '', data: null })
+      fetchStock()
+    } catch (e) {
+      alert('Delete failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const adjustStock = (amount) => {
+    setFormData(prev => ({
+      ...prev,
+      stock: Math.max(0, prev.stock + amount)
+    }))
+  }
+
   return (
     <div>
+      {/* Elegant Modal */}
+      {modal.show && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h2 style={{ marginBottom: '1rem', color: modal.type === 'delete' ? 'var(--danger)' : 'var(--accent)' }}>
+              {modal.type === 'delete' ? '⚠️ Confirm Deletion' : '📝 Confirm Update'}
+            </h2>
+            <p style={{ color: 'var(--text-main)', marginBottom: '2rem' }}>
+              {modal.type === 'delete' 
+                ? `Are you sure you want to permanently delete "${modal.data?.name}"? This action cannot be reversed.`
+                : `Save changes to "${modal.data?.name}"?`
+              }
+            </p>
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+              <button 
+                className="btn" 
+                style={{ backgroundColor: 'var(--bg-app)', color: 'var(--text-main)', border: '1px solid var(--border)' }}
+                onClick={() => setModal({ show: false, type: '', data: null })}
+              >
+                Cancel
+              </button>
+              <button 
+                className={`btn ${modal.type === 'delete' ? 'btn-danger' : 'btn-primary'}`}
+                onClick={modal.type === 'delete' ? executeDelete : executeSubmit}
+                disabled={loading}
+              >
+                {loading ? 'Processing...' : modal.type === 'delete' ? 'Delete Item' : 'Confirm Update'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="card">
-        <h3 style={{ marginBottom: '1rem' }}>Add / Update Food Item</h3>
-        <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', alignItems: 'end' }}>
+        <h3 style={{ marginBottom: '1rem' }}>{isEditing ? '📝 Edit Food Item' : '🍱 Add New Food Item'}</h3>
+        <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem', alignItems: 'end' }}>
           <div className="form-group">
-            <label>Item ID (e.g. ITEM004)</label>
+            <label>Item ID</label>
             <input 
               className="form-input" 
               required 
-              value={newItem.itemId} 
-              onChange={e => setNewItem({...newItem, itemId: e.target.value})}
+              disabled={isEditing}
+              value={formData.itemId} 
+              onChange={e => setFormData({...formData, itemId: e.target.value.toUpperCase()})}
             />
           </div>
           <div className="form-group">
@@ -54,47 +133,69 @@ export default function InventoryManager() {
             <input 
               className="form-input" 
               required 
-              value={newItem.name} 
-              onChange={e => setNewItem({...newItem, name: e.target.value})}
+              value={formData.name} 
+              onChange={e => setFormData({...formData, name: e.target.value})}
             />
           </div>
           <div className="form-group">
-            <label>Initial Stock</label>
-            <input 
-              type="number" 
-              className="form-input" 
-              required 
-              value={newItem.stock} 
-              onChange={e => setNewItem({...newItem, stock: parseInt(e.target.value)})}
-            />
+            <label>Stock Count</label>
+            <div className="qty-selector">
+              <button type="button" className="qty-btn" onClick={() => adjustStock(-1)}>−</button>
+              <input 
+                type="number" 
+                className="qty-input"
+                value={formData.stock}
+                onChange={e => setFormData({...formData, stock: parseInt(e.target.value) || 0})}
+              />
+              <button type="button" className="qty-btn" onClick={() => adjustStock(1)}>+</button>
+            </div>
           </div>
-          <button className="btn btn-primary" style={{ height: '42px', marginBottom: '1rem' }} disabled={loading}>
-            {loading ? 'Processing...' : 'Save Item'}
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+            <button className="btn btn-primary" style={{ flex: 1 }} disabled={loading}>
+              {loading ? '...' : isEditing ? 'Update' : 'Create'}
+            </button>
+            {isEditing && (
+              <button 
+                type="button" 
+                className="btn" 
+                style={{ backgroundColor: 'var(--bg-app)', border: '1px solid var(--border)', color: 'var(--text-main)' }}
+                onClick={() => { setIsEditing(false); setFormData({ itemId: '', name: '', stock: 0 }); }}
+              >
+                Cancel
+              </button>
+            )}
+          </div>
         </form>
       </div>
 
       <div className="card">
-        <h3 style={{ marginBottom: '1rem' }}>Current Inventory</h3>
+        <h3 style={{ marginBottom: '1.5rem' }}>Current Inventory</h3>
         <table className="data-table">
           <thead>
             <tr>
               <th>ID</th>
               <th>Name</th>
-              <th>Stock Available</th>
+              <th>Available</th>
               <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {items.map(item => (
               <tr key={item.itemId}>
                 <td>{item.itemId}</td>
-                <td style={{ fontWeight: '600' }}>{item.name}</td>
+                <td style={{ fontWeight: '700', color: 'var(--text-main)' }}>{item.name}</td>
                 <td>{item.stock} units</td>
                 <td>
                   <span className={`status-pill ${item.stock > 20 ? 'success' : item.stock > 0 ? 'warning' : 'danger'}`}>
-                    {item.stock > 20 ? 'In Stock' : item.stock > 0 ? 'Low Stock' : 'Out of Stock'}
+                    {item.stock > 20 ? 'Good' : item.stock > 0 ? 'Low' : 'Empty'}
                   </span>
+                </td>
+                <td>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button className="btn btn-success" style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }} onClick={() => handleEdit(item)}>Edit</button>
+                    <button className="btn btn-danger" style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }} onClick={() => handleDeleteClick(item)}>Delete</button>
+                  </div>
                 </td>
               </tr>
             ))}

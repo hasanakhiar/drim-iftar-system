@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 
-export default function OrderPlacer({ onOrderPlaced }) {
+export default function OrderPlacer({ onOrderPlaced, showModal }) {
   const [items, setItems] = useState([])
   const [quantity, setQuantity] = useState(1)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
 
   const fetchStock = async () => {
     try {
@@ -27,7 +26,6 @@ export default function OrderPlacer({ onOrderPlaced }) {
 
   const handleOrder = async (itemId) => {
     setLoading(true)
-    setError('')
     try {
       const token = localStorage.getItem('token')
       const resp = await axios.post(
@@ -40,29 +38,51 @@ export default function OrderPlacer({ onOrderPlaced }) {
       if (err.response?.status === 401) {
         localStorage.removeItem('token');
         window.location.reload();
+        return
       }
-      setError(err.response?.data?.error || 'Failed to place order')
+      showModal('❌ Order Failed', err.response?.data?.error || 'Failed to place order. Please try again.', 'error')
     } finally {
       setLoading(false)
     }
   }
 
+  const adjustQty = (amount) => {
+    setQuantity(prev => {
+      const newVal = prev + amount
+      return newVal >= 1 && newVal <= 20 ? newVal : prev
+    })
+  }
+
   return (
     <div className="order-placer card">
       <h3 style={{ marginBottom: '1.5rem' }}>🍱 Place Your Iftar Order</h3>
-      {error && <div className="error-msg">{error}</div>}
       
-      <div className="quantity-selector" style={{ marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <span style={{ fontWeight: '600' }}>Quantity:</span>
-        <input 
-          type="number" 
-          min="1" 
-          max="20"
-          className="form-input"
-          value={quantity} 
-          onChange={(e) => setQuantity(parseInt(e.target.value))}
-          style={{ width: '80px' }}
-        />
+      <div className="quantity-selector" style={{ marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+        <span style={{ fontWeight: '700', color: 'var(--text-main)' }}>Select Quantity:</span>
+        <div className="qty-selector">
+          <button 
+            type="button" 
+            className="qty-btn" 
+            onClick={() => adjustQty(-1)}
+            disabled={quantity <= 1}
+          >
+            −
+          </button>
+          <input 
+            type="number" 
+            className="qty-input"
+            value={quantity} 
+            readOnly
+          />
+          <button 
+            type="button" 
+            className="qty-btn" 
+            onClick={() => adjustQty(1)}
+            disabled={quantity >= 20}
+          >
+            +
+          </button>
+        </div>
       </div>
 
       <div className="items-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '1.25rem' }}>
