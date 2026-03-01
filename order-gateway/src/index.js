@@ -6,6 +6,7 @@ const axios = require('axios');
 const Redis = require('ioredis');
 const amqplib = require('amqplib');
 const mongoose = require('mongoose');
+const { validateOrder } = require('./validation');
 
 // Use crypto.randomUUID (Node 14.17+), else fallback
 function generateId() {
@@ -147,9 +148,12 @@ app.post('/orders', authMiddleware, async (req, res) => {
   const start = Date.now();
   try {
     const { itemId, quantity = 1 } = req.body;
-    if (!itemId) {
+    
+    // Integrity Validation
+    const validation = validateOrder({ itemId, quantity });
+    if (!validation.valid) {
       recordRequest(Date.now() - start, true);
-      return res.status(400).json({ error: 'itemId is required' });
+      return res.status(400).json({ error: validation.error });
     }
 
     const stockKey = `stock:${itemId}`;
