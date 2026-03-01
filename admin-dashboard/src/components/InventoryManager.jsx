@@ -8,7 +8,7 @@ export default function InventoryManager() {
   const [isEditing, setIsEditing] = useState(false)
   
   // Modal state
-  const [modal, setModal] = useState({ show: false, type: '', data: null })
+  const [modal, setModal] = useState({ show: false, title: '', message: '', type: 'info', confirm: null })
 
   const fetchStock = async () => {
     try {
@@ -28,7 +28,13 @@ export default function InventoryManager() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (isEditing) {
-      setModal({ show: true, type: 'update', data: formData })
+      setModal({ 
+        show: true, 
+        title: '📝 Confirm Update', 
+        message: `Are you sure you want to update "${formData.name}"?`, 
+        type: 'confirm',
+        confirm: executeSubmit
+      })
     } else {
       executeSubmit()
     }
@@ -40,10 +46,20 @@ export default function InventoryManager() {
       await axios.post('http://localhost:3003/stock', formData)
       setFormData({ itemId: '', name: '', stock: 0 })
       setIsEditing(false)
-      setModal({ show: false, type: '', data: null })
+      setModal({ 
+        show: true, 
+        title: '✅ Success', 
+        message: 'Item saved successfully.', 
+        type: 'success' 
+      })
       fetchStock()
     } catch (e) {
-      alert('Operation failed')
+      setModal({ 
+        show: true, 
+        title: '❌ Error', 
+        message: 'Operation failed. Please try again.', 
+        type: 'error' 
+      })
     } finally {
       setLoading(false)
     }
@@ -56,18 +72,34 @@ export default function InventoryManager() {
   }
 
   const handleDeleteClick = (item) => {
-    setModal({ show: true, type: 'delete', data: item })
+    setModal({ 
+      show: true, 
+      title: '⚠️ Confirm Deletion', 
+      message: `Permanently delete "${item.name}"? This action cannot be undone.`, 
+      type: 'delete',
+      data: item,
+      confirm: () => executeDelete(item)
+    })
   }
 
-  const executeDelete = async () => {
-    if (!modal.data) return
+  const executeDelete = async (item) => {
     setLoading(true)
     try {
-      await axios.delete(`http://localhost:3003/stock/${modal.data.itemId}`)
-      setModal({ show: false, type: '', data: null })
+      await axios.delete(`http://localhost:3003/stock/${item.itemId}`)
+      setModal({ 
+        show: true, 
+        title: '🗑️ Deleted', 
+        message: 'Item removed from inventory.', 
+        type: 'success' 
+      })
       fetchStock()
     } catch (e) {
-      alert('Delete failed')
+      setModal({ 
+        show: true, 
+        title: '❌ Error', 
+        message: 'Failed to delete item.', 
+        type: 'error' 
+      })
     } finally {
       setLoading(false)
     }
@@ -86,30 +118,33 @@ export default function InventoryManager() {
       {modal.show && (
         <div className="modal-overlay">
           <div className="modal-content">
-            <h2 style={{ marginBottom: '1rem', color: modal.type === 'delete' ? 'var(--danger)' : 'var(--accent)' }}>
-              {modal.type === 'delete' ? '⚠️ Confirm Deletion' : '📝 Confirm Update'}
+            <h2 style={{ 
+              marginBottom: '1rem', 
+              color: modal.type === 'delete' || modal.type === 'error' ? 'var(--danger)' : 
+                     modal.type === 'success' ? 'var(--success)' : 'var(--accent)' 
+            }}>
+              {modal.title}
             </h2>
             <p style={{ color: 'var(--text-main)', marginBottom: '2rem' }}>
-              {modal.type === 'delete' 
-                ? `Are you sure you want to permanently delete "${modal.data?.name}"? This action cannot be reversed.`
-                : `Save changes to "${modal.data?.name}"?`
-              }
+              {modal.message}
             </p>
             <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
               <button 
                 className="btn" 
                 style={{ backgroundColor: 'var(--bg-app)', color: 'var(--text-main)', border: '1px solid var(--border)' }}
-                onClick={() => setModal({ show: false, type: '', data: null })}
+                onClick={() => setModal({ ...modal, show: false })}
               >
-                Cancel
+                {modal.confirm ? 'Cancel' : 'Close'}
               </button>
-              <button 
-                className={`btn ${modal.type === 'delete' ? 'btn-danger' : 'btn-primary'}`}
-                onClick={modal.type === 'delete' ? executeDelete : executeSubmit}
-                disabled={loading}
-              >
-                {loading ? 'Processing...' : modal.type === 'delete' ? 'Delete Item' : 'Confirm Update'}
-              </button>
+              {modal.confirm && (
+                <button 
+                  className={`btn ${modal.type === 'delete' ? 'btn-danger' : 'btn-primary'}`}
+                  onClick={() => { modal.confirm(); if(!loading) setModal({...modal, show: false}); }}
+                  disabled={loading}
+                >
+                  {loading ? 'Processing...' : 'Confirm'}
+                </button>
+              )}
             </div>
           </div>
         </div>
