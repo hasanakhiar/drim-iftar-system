@@ -1,37 +1,20 @@
-# IUT Cafeteria Iftar System
+# Iftar Microservices System
 
 A professional, distributed, and fault-tolerant microservices system designed to handle the high-load Ramadan rush for IUT cafeteria ordering.
 
-## System Architecture
+## Project Documentation Index
 
-The system is built using a modern microservices architecture, ensuring that failures in one service do not compromise the entire student experience.
+For a detailed understanding of the project, please refer to the following documents:
 
-- **Identity Provider (Port 3001)**: Single source of truth for student authentication; issues JWT tokens.
-- **Order Gateway (Port 3002)**: Primary entry point; performs token validation and proxies stock checks. Persists all orders to MongoDB.
-- **Stock Service (Port 3003)**: Manages inventory with optimistic locking to prevent over-selling.
-- **Kitchen Queue (Port 3004)**: Asynchronously processes orders, decoupling user feedback from time-intensive food preparation.
-- **Notification Hub (Port 3005)**: Bridges RabbitMQ updates to real-time Socket.io events and synchronizes final status to the database.
+1.  **[Requirement Analysis](RequirementAnalysis.md)**: Deep dive into problem statements, identified requirements, and implementation checklist.
+2.  **[Technical Architecture](TechnicalArchitecture.md)**: Detailed overview of system design, component interactions, and data strategy.
+3.  **[Testing Guide](TESTING_GUIDE.md)**: Comprehensive manual for running and understanding the three-tier testing suite.
+4.  **[Submission Deliverables](DELIVERABLES.md)**: Consolidated report for DevSprint 2026 judges.
+5.  **[Project Evolution](PROJECT_EVOLUTION.md)**: Summary of architectural decisions and the development journey.
 
-## Key Features
+---
 
-### Chaos Engineering & Resilience
-- **Killswitch System**: Admins can terminate any service to simulate outages.
-- **Ghost-Free Reconnection**: Services strictly manage reconnection timers to honor the killswitch without background ghost reconnections.
-- **Message Durability**: Uses RabbitMQ with message re-queueing on failure to ensure zero-loss order processing.
-
-### Student Portal
-- **Real-time Tracking**: Watch your order transition from Confirmed to Stock Verified to In Kitchen to Ready.
-- **Global Outage Banner**: Immediate warning if the Notification Hub is offline before you order.
-- **Order History**: Personal order history with advanced pagination and direct tracking recovery.
-- **Professional UI**: Dark/Light mode support, custom quantity selectors, and elegant animated modals.
-
-### Admin Monitoring Dashboard
-- **System Dashboard**: Live health grid and labeled performance metrics for all services.
-- **Inventory Management**: Create, edit, or delete food items with real-time stock updates.
-- **Student Management**: Register new students and monitor individual activity/order counts.
-- **Advanced Pagination**: Optimized for large datasets with Jump 10 and Skip to End controls.
-
-## Getting Started
+## Quick Start
 
 ### Prerequisites
 - Docker & Docker Compose
@@ -44,17 +27,25 @@ The system is built using a modern microservices architecture, ensuring that fai
    ```
 
 ### Access Ports
-- **Student Portal**: [http://localhost:5173](http://localhost:5173)
-- **Admin Dashboard**: [http://localhost:5174](http://localhost:5174)
+- Student Portal: [http://localhost:5173](http://localhost:5173)
+- Admin Dashboard: [http://localhost:5174](http://localhost:5174)
 
 ### Default Credentials
-- **Student ID**: STU001
-- **Password**: password123
+- Student ID: `STU001`
+- Password: `password123`
 
-## Technologies Used
-- **Backend**: Node.js, Express, MongoDB, Redis, RabbitMQ
-- **Frontend**: React (Vite), Socket.io-client, Axios
-- **DevOps**: Docker, Docker Compose
+---
+
+## Key Features
+
+- **Decoupled Microservices**: 5 backend services + 2 UIs communicating via HTTP and RabbitMQ.
+- **Chaos Engineering**: Built-in killswitch system to simulate and monitor service outages.
+- **Real-time Feedback**: Instant order tracking updates via Socket.io.
+- **High-Performance Caching**: Redis-backed stock checks and state recovery.
+- **Advanced Management**: Full inventory CRUD and student directory with activity metrics.
+- **Professional UI**: Responsive designs with Dark/Light mode support and custom components.
+
+---
 
 ## AI Tool Disclosure
 In accordance with DevSprint 2026 rules, the following AI tools were used during the development of this project:
