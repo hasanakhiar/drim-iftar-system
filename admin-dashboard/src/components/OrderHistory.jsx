@@ -37,9 +37,9 @@ export default function OrderHistory() {
           {orders.map(order => (
             <tr key={order.orderId}>
               <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{order.orderId.slice(0, 8)}...</td>
-              <td style={{ fontWeight: '600' }}>{order.studentId}</td>
-              <td>{order.itemId}</td>
-              <td>{order.quantity}</td>
+              <td style={{ fontWeight: '600', color: 'var(--text-main)' }}>ID: {order.studentId}</td>
+              <td style={{ color: 'var(--text-main)' }}>Item: {order.itemId}</td>
+              <td style={{ color: 'var(--text-main)' }}>Qty: {order.quantity}</td>
               <td>
                 <span className={`status-pill ${
                   order.status === 'ready' ? 'success' : 

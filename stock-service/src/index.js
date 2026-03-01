@@ -133,9 +133,6 @@ async function processOrderWithRetry(order, maxRetries = 3) {
 
     await redis.set(`stock:${itemId}`, updated.stock).catch(() => {});
     
-    // Simulate visible processing delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
     const statusMsg = { orderId, status: 'stock_verified', itemId, timestamp: new Date().toISOString() };
     await redis.set(`order_status:${orderId}`, 'stock_verified', 'EX', 3600).catch(() => {});
     

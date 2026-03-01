@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import axios from 'axios'
 import Login from './components/Login.jsx'
 import OrderPlacer from './components/OrderPlacer.jsx'
 import OrderTracker from './components/OrderTracker.jsx'
@@ -9,11 +10,27 @@ export default function App() {
   const [orderId, setOrderId] = useState(null)
   const [view, setView] = useState('menu')
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light')
+  const [hubOnline, setHubOnline] = useState(true)
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('theme', theme)
   }, [theme])
+
+  // Global Hub Health Check
+  useEffect(() => {
+    const checkHub = async () => {
+      try {
+        await axios.get('http://localhost:3005/health', { timeout: 2000 })
+        setHubOnline(true)
+      } catch (e) {
+        setHubOnline(false)
+      }
+    }
+    checkHub()
+    const interval = setInterval(checkHub, 5000)
+    return () => clearInterval(interval)
+  }, [])
 
   const handleSetToken = (newToken) => {
     if (newToken) {
@@ -34,7 +51,29 @@ export default function App() {
 
   return (
     <div className="container">
-      <header className="nav-bar">
+      {!hubOnline && (
+        <div style={{ 
+          backgroundColor: 'var(--danger)', 
+          color: 'white', 
+          textAlign: 'center', 
+          padding: '0.5rem', 
+          fontSize: '0.8rem', 
+          fontWeight: 'bold',
+          borderRadius: '0 0 0.5rem 0.5rem',
+          position: 'fixed',
+          top: 0,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 1000,
+          width: 'auto',
+          minWidth: '300px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+        }}>
+          ⚠️ NOTIFICATION SYSTEM OFFLINE - LIVE UPDATES PAUSED
+        </div>
+      )}
+
+      <header className="nav-bar" style={{ marginTop: !hubOnline ? '2rem' : '0' }}>
         <h1>🍽️ IUT Cafeteria</h1>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
           <button onClick={toggleTheme} className="theme-toggle" title="Toggle Theme">

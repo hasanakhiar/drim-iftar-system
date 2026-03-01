@@ -51,7 +51,7 @@ export default function OrderTracker({ orderId }) {
 
   useEffect(() => {
     connectSocket()
-    const timer = setTimeout(() => setHasAttempted(true), 2000)
+    const timer = setTimeout(() => setHasAttempted(true), 500)
     return () => {
       if (socketRef.current) socketRef.current.disconnect()
       clearTimeout(timer)
