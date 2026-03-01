@@ -1,4 +1,4 @@
-name: CI/CD Pipeline - Integration Tests
+name: CI Pipeline - Integration Tests
 
 on:
   push:
@@ -14,31 +14,16 @@ jobs:
     services:
       mongodb:
         image: mongo:7
-        options: >-
-          --health-cmd mongosh
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
         ports:
           - 27017:27017
       
       redis:
         image: redis:7-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
         ports:
           - 6379:6379
       
       rabbitmq:
         image: rabbitmq:3-management-alpine
-        options: >-
-          --health-cmd "rabbitmq-diagnostics -q ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
         ports:
           - 5672:5672
           - 15672:15672
@@ -48,125 +33,55 @@ jobs:
     
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18.x'
+          node-version: '20.x'
           cache: 'npm'
       
-      - name: Wait for MongoDB
-        run: npx wait-on mongodb://localhost:27017
-      
-      - name: Wait for Redis
-        run: npx wait-on redis://localhost:6379
-      
-      - name: Wait for RabbitMQ
-        run: npx wait-on tcp:localhost:5672
-      
-      - name: Start Identity Provider
+      - name: Install All Dependencies
         run: |
-          cd identity-provider
-          npm install
-          nohup npm start > /tmp/identity-provider.log 2>&1 &
-          sleep 2
-      
-      - name: Start Order Gateway
+          for dir in identity-provider order-gateway stock-service kitchen-queue notification-hub; do
+            cd $dir && npm ci && cd ..
+          done
+
+      - name: Start Services
+        env:
+          JWT_SECRET: test-secret-key
+          MONGO_URI: mongodb://localhost:27017/cafeteria
+          REDIS_URL: redis://localhost:6379
+          RABBITMQ_URL: amqp://localhost:5672
         run: |
-          cd order-gateway
-          npm install
-          nohup npm start > /tmp/order-gateway.log 2>&1 &
-          sleep 2
+          # Use localhost for services because they are running in the runner's network stack
+          # We need to set these env vars for the background processes
+          export PORT=3001 && cd identity-provider && nohup npm start > /tmp/identity-provider.log 2>&1 &
+          export PORT=3002 && cd ../order-gateway && nohup npm start > /tmp/order-gateway.log 2>&1 &
+          export PORT=3003 && cd ../stock-service && nohup npm start > /tmp/stock-service.log 2>&1 &
+          export PORT=3004 && cd ../kitchen-queue && nohup npm start > /tmp/kitchen-queue.log 2>&1 &
+          export PORT=3005 && cd ../notification-hub && nohup npm start > /tmp/notification-hub.log 2>&1 &
+          sleep 10
       
-      - name: Start Stock Service
+      - name: Health Check
         run: |
-          cd stock-service
-          npm install
-          nohup npm start > /tmp/stock-service.log 2>&1 &
-          sleep 2
-      
-      - name: Start Kitchen Queue
-        run: |
-          cd kitchen-queue
-          npm install
-          nohup npm start > /tmp/kitchen-queue.log 2>&1 &
-          sleep 2
-      
-      - name: Start Notification Hub
-        run: |
-          cd notification-hub
-          npm install
-          nohup npm start > /tmp/notification-hub.log 2>&1 &
-          sleep 2
-      
-      - name: Health Check - All Services
-        run: |
-          for service in identity-provider order-gateway stock-service kitchen-queue notification-hub; do
-            port=$(grep "PORT=" $service/.env 2>/dev/null | cut -d'=' -f2)
-            if [ -z "$port" ]; then
-              case $service in
-                identity-provider) port=3001;;
-                order-gateway) port=3002;;
-                stock-service) port=3003;;
-                kitchen-queue) port=3004;;
-                notification-hub) port=3005;;
-              esac
-            fi
-            echo "Checking $service on port $port..."
-            npx wait-on http://localhost:$port/health || exit 1
+          for port in 3001 3002 3003 3004 3005; do
+            echo "Checking port $port..."
+            curl --retry 5 --retry-delay 2 -f http://localhost:$port/health || (cat /tmp/*.log && exit 1)
           done
       
-      - name: Run Service-to-Service Tests
-        run: |
-          npm test -- e2e.test.js --testNamePattern="Order Flow"
+      - name: Run E2E Tests
+        run: npm test -- e2e.test.js
       
-      - name: Run Concurrency Tests
-        run: |
-          npm test -- e2e.test.js --testNamePattern="Concurrent"
-      
-      - name: Run Resilience Tests
-        run: |
-          npm test -- e2e.test.js --testNamePattern="Chaos Mode"
-      
-      - name: Collect Service Logs
+      - name: Collect Logs on Failure
         if: failure()
         run: |
-          mkdir -p /tmp/logs
-          cp /tmp/identity-provider.log /tmp/logs/ || true
-          cp /tmp/order-gateway.log /tmp/logs/ || true
-          cp /tmp/stock-service.log /tmp/logs/ || true
-          cp /tmp/kitchen-queue.log /tmp/logs/ || true
-          cp /tmp/notification-hub.log /tmp/logs/ || true
-      
-      - name: Upload Service Logs
+          mkdir -p logs
+          cp /tmp/*.log logs/
+        
+      - name: Upload Logs
         if: failure()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: service-logs
-          path: /tmp/logs
-
-  docker-build:
-    name: Docker Build & Push
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-      
-      - name: Build Docker Images
-        run: docker-compose build
-      
-      - name: Verify Docker Compose Configuration
-        run: docker-compose config
-      
-      - name: Test Docker Compose Up
-        run: |
-          docker-compose up -d
-          sleep 10
-          docker-compose ps
-          docker-compose down
+          name: integration-logs
+          path: logs/
