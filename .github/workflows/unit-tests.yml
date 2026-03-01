@@ -1,0 +1,100 @@
+name: CI/CD Pipeline - Unit Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [16.x, 18.x, 20.x]
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+      
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      
+      # Identity Provider Tests
+      - name: Install Identity Provider Dependencies
+        run: cd identity-provider && npm install
+      
+      - name: Run Identity Provider Unit Tests
+        run: cd identity-provider && npm test -- tests/auth.test.js
+      
+      # Order Gateway Tests
+      - name: Install Order Gateway Dependencies
+        run: cd order-gateway && npm install
+      
+      - name: Run Order Gateway Unit Tests
+        run: cd order-gateway && npm test -- tests/validation.test.js
+      
+      - name: Run Order Gateway Integration Tests
+        run: cd order-gateway && npm test -- tests/integration.test.js
+      
+      # Stock Service Tests
+      - name: Install Stock Service Dependencies
+        run: cd stock-service && npm install
+      
+      - name: Run Stock Service Unit Tests
+        run: cd stock-service && npm test -- tests/stockUtils.test.js
+      
+      - name: Run Stock Service Integration Tests
+        run: cd stock-service && npm test -- tests/integration.test.js
+      
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results-${{ matrix.node-version }}
+          path: |
+            identity-provider/coverage
+            order-gateway/coverage
+            stock-service/coverage
+      
+      - name: Publish Test Report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Test Results - Node ${{ matrix.node-version }}
+          path: '**/*.test.json'
+          reporter: 'jest-junit'
+
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+      
+      - name: Generate Coverage Report
+        run: |
+          cd identity-provider && npm install && npm test -- --coverage --coveragePathIgnorePatterns=node_modules
+          cd ../order-gateway && npm install && npm test -- --coverage --coveragePathIgnorePatterns=node_modules
+          cd ../stock-service && npm install && npm test -- --coverage --coveragePathIgnorePatterns=node_modules
+      
+      - name: Upload Coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage/coverage-final.json
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
