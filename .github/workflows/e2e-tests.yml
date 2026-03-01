@@ -127,7 +127,7 @@ jobs:
           docker images >> metrics/images.txt
       
       - name: Install E2E Test Dependencies
-        run: npm ci --prefer-offline --no-audit
+        run: npm install --prefer-offline --no-audit
       
       - name: Run E2E Tests
         run: |

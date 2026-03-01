@@ -68,7 +68,7 @@ jobs:
           for service in identity-provider order-gateway stock-service kitchen-queue notification-hub; do
             if [ -f "$service/package.json" ]; then
               echo "Testing $service..."
-              (cd "$service" && npm ci --prefer-offline --no-audit && npm test -- --coverage 2>/dev/null) || true
+              (cd "$service" && npm install --prefer-offline --no-audit && npm test -- --coverage 2>/dev/null) || true
             fi
           done
       
@@ -151,7 +151,7 @@ jobs:
       - name: Install Dependencies
         run: |
           for service in identity-provider order-gateway stock-service kitchen-queue notification-hub; do
-            (cd "$service" && npm ci --prefer-offline --no-audit) || true
+            (cd "$service" && npm install --prefer-offline --no-audit) || true
           done
       
       - name: Run Integration Tests

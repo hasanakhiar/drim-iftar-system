@@ -36,7 +36,7 @@ jobs:
       
       # Identity Provider Tests
       - name: Install Identity Provider Dependencies
-        run: cd identity-provider && npm ci --prefer-offline --no-audit
+        run: cd identity-provider && npm install --prefer-offline --no-audit
       
       - name: Run Identity Provider Unit Tests
         run: cd identity-provider && npm test -- tests/auth.test.js --coverage
@@ -44,7 +44,7 @@ jobs:
       
       # Order Gateway Tests
       - name: Install Order Gateway Dependencies
-        run: cd order-gateway && npm ci --prefer-offline --no-audit
+        run: cd order-gateway && npm install --prefer-offline --no-audit
       
       - name: Run Order Gateway Validation Tests
         run: cd order-gateway && npm test -- tests/validation.test.js --coverage
@@ -56,7 +56,7 @@ jobs:
       
       # Stock Service Tests
       - name: Install Stock Service Dependencies
-        run: cd stock-service && npm ci --prefer-offline --no-audit
+        run: cd stock-service && npm install --prefer-offline --no-audit
       
       - name: Run Stock Service Utility Tests
         run: cd stock-service && npm test -- tests/stockUtils.test.js --coverage
@@ -68,7 +68,7 @@ jobs:
       
       # Kitchen Queue Tests
       - name: Install Kitchen Queue Dependencies
-        run: cd kitchen-queue && npm ci --prefer-offline --no-audit
+        run: cd kitchen-queue && npm install --prefer-offline --no-audit
       
       - name: Run Kitchen Queue Tests
         run: cd kitchen-queue && npm test
@@ -76,7 +76,7 @@ jobs:
       
       # Notification Hub Tests
       - name: Install Notification Hub Dependencies
-        run: cd notification-hub && npm ci --prefer-offline --no-audit
+        run: cd notification-hub && npm install --prefer-offline --no-audit
       
       - name: Run Notification Hub Tests
         run: cd notification-hub && npm test

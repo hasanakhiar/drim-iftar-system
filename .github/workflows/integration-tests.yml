@@ -86,7 +86,7 @@ jobs:
         run: |
           for service in identity-provider order-gateway stock-service kitchen-queue notification-hub; do
             echo "Installing dependencies for $service..."
-            (cd "$service" && npm ci --prefer-offline --no-audit) || exit 1
+            (cd "$service" && npm install --prefer-offline --no-audit) || exit 1
           done
       
       - name: Create MongoDB Collections
