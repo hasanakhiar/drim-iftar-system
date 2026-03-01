@@ -432,9 +432,8 @@ Coverage: 82% of critical paths
 #### 2. Integration Test Workflow ([.github/workflows/integration-tests.yml](.github/workflows/integration-tests.yml))
 
 **Triggers**:
-- Push to main branch
-- Pull requests to main branch
-- Can be manually triggered
+- Push to main or develop branch
+- Pull requests to main or develop branch
 
 **Setup**:
 1. Start MongoDB 7 with health checks
@@ -472,8 +471,8 @@ Integration tests: ✓ 104 passed (45.2s)
 #### 3. E2E Test Workflow ([.github/workflows/e2e-tests.yml](.github/workflows/e2e-tests.yml))
 
 **Triggers**:
-- Daily at 2 AM UTC
-- Can be manually triggered
+- **Scheduled**: Weekly on Sunday at midnight UTC (cron: `0 0 * * 0`)
+- **Manual**: Can be triggered on-demand via `workflow_dispatch` with optional `load-test` input
 
 **Setup**:
 - Full stack via Docker Compose
@@ -489,10 +488,10 @@ Integration tests: ✓ 104 passed (45.2s)
 - Security scanning
 
 **Artifacts Generated**:
-- Performance report (JSON)
-- Service metrics (per service)
-- Load test results
-- Security scan results
+- Performance report (JSON) - Always collected
+- Service metrics (per service) - Always collected
+- Load test results - Only when `load-test=true` (manual trigger)
+- Security scan results - Always collected
 
 **Example Output**:
 ```

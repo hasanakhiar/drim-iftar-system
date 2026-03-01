@@ -48,5 +48,5 @@ For a detailed understanding of the project, please refer to the following docum
 
 ## AI Tool Disclosure
 In accordance with DevSprint 2026 rules, the following AI tools were used during the development of this project:
-- Google Gemini
-- GitHub Copilot
+- GitHub Copilot (Used to assist with creating tests, CI/CD and documentation)
+
