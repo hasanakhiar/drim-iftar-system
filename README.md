@@ -55,3 +55,8 @@ The system is built using a modern microservices architecture, ensuring that fai
 - **Backend**: Node.js, Express, MongoDB, Redis, RabbitMQ
 - **Frontend**: React (Vite), Socket.io-client, Axios
 - **DevOps**: Docker, Docker Compose
+
+## AI Tool Disclosure
+In accordance with DevSprint 2026 rules, the following AI tools were used during the development of this project:
+- Google Gemini
+- GitHub Copilot
