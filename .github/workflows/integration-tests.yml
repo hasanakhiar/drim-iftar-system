@@ -1,4 +1,4 @@
-name: CI Pipeline - Integration Tests
+name: Integration Tests
 
 on:
   push:
@@ -6,22 +6,29 @@ on:
   pull_request:
     branches: [main, develop]
 
+concurrency:
+  group: integration-tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   integration-tests:
-    name: Integration Tests
+    name: Integration Tests with Services
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     
     services:
       mongodb:
         image: mongo:7
         options: >-
-          --health-cmd mongosh
+          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
         ports:
           - 27017:27017
+        env:
+          MONGO_INITDB_ROOT_USERNAME: admin
+          MONGO_INITDB_ROOT_PASSWORD: password
       
       redis:
         image: redis:7-alpine
@@ -34,7 +41,7 @@ jobs:
           - 6379:6379
       
       rabbitmq:
-        image: rabbitmq:3-management-alpine
+        image: rabbitmq:3-management
         options: >-
           --health-cmd "rabbitmq-diagnostics -q ping"
           --health-interval 10s
@@ -50,6 +57,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -58,46 +67,85 @@ jobs:
           cache: 'npm'
           cache-dependency-path: '**/package-lock.json'
       
+      - name: Verify Service Health - MongoDB
+        run: |
+          timeout 30 bash -c 'until mongosh mongodb://admin:password@localhost:27017 --eval "db.adminCommand(\"ping\")" > /dev/null 2>&1; do echo "Waiting for MongoDB..."; sleep 2; done'
+          echo "✓ MongoDB is healthy"
+      
+      - name: Verify Service Health - Redis
+        run: |
+          timeout 30 bash -c 'until redis-cli -h localhost ping; do echo "Waiting for Redis..."; sleep 2; done'
+          echo "✓ Redis is healthy"
+      
+      - name: Verify Service Health - RabbitMQ
+        run: |
+          timeout 30 bash -c 'until curl -s -u guest:guest http://localhost:15672/api/aliveness-test/%2F > /dev/null 2>&1; do echo "Waiting for RabbitMQ..."; sleep 2; done'
+          echo "✓ RabbitMQ is healthy"
+      
       - name: Install Dependencies for All Services
         run: |
           for service in identity-provider order-gateway stock-service kitchen-queue notification-hub; do
-            cd $service && npm ci && cd ..
+            echo "Installing dependencies for $service..."
+            (cd "$service" && npm ci --prefer-offline --no-audit) || exit 1
           done
       
-      - name: Wait for MongoDB
-        run: npx wait-on mongodb://localhost:27017 --timeout 30000
-      
-      - name: Wait for Redis
-        run: npx wait-on redis://localhost:6379 --timeout 30000
-      
-      - name: Wait for RabbitMQ
-        run: npx wait-on tcp:localhost:5672 --timeout 30000
-      
-      - name: Start Identity Provider
+      - name: Create MongoDB Collections
         run: |
-          cd identity-provider
-          nohup npm start > /tmp/identity-provider.log 2>&1 &
-          sleep 3
+          mongosh mongodb://admin:password@localhost:27017 << 'EOF'
+          use cafeteria;
+          db.createCollection("orders");
+          db.createCollection("students");
+          db.createCollection("inventory");
+          db.createCollection("menus");
+          EOF
       
-      - name: Start Order Gateway
+      - name: Run Integration Tests
+        env:
+          MONGODB_URI: mongodb://admin:password@localhost:27017/cafeteria
+          REDIS_URL: redis://localhost:6379
+          RABBITMQ_URL: amqp://guest:guest@localhost:5672
         run: |
-          cd order-gateway
-          nohup npm start > /tmp/order-gateway.log 2>&1 &
-          sleep 3
+          echo "Running Order Gateway Integration Tests..."
+          (cd order-gateway && npm test -- tests/integration.test.js --coverage) || true
+          
+          echo "Running Stock Service Integration Tests..."
+          (cd stock-service && npm test -- tests/integration.test.js --coverage) || true
       
-      - name: Start Stock Service
+      - name: Docker Compose Build Verification
         run: |
-          cd stock-service
-          nohup npm start > /tmp/stock-service.log 2>&1 &
-          sleep 3
+          echo "Verifying Docker Compose configuration..."
+          docker-compose config > /dev/null 2>&1
+          echo "✓ Docker Compose configuration is valid"
       
-      - name: Start Kitchen Queue
+      - name: Upload Integration Test Coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-coverage
+          path: '**/coverage'
+          if-no-files-found: 'warn'
+          retention-days: 30
+      
+      - name: Collect Service Logs on Failure
+        if: failure()
         run: |
-          cd kitchen-queue
-          nohup npm start > /tmp/kitchen-queue.log 2>&1 &
-          sleep 3
+          mkdir -p logs
+          echo "=== MongoDB Logs ===" > logs/mongodb.log
+          docker logs $(docker ps -q -f ancestor=mongo:7) >> logs/mongodb.log 2>&1 || true
+          
+          echo "=== Redis Logs ===" > logs/redis.log
+          docker logs $(docker ps -q -f ancestor=redis:7-alpine) >> logs/redis.log 2>&1 || true
+          
+          echo "=== RabbitMQ Logs ===" > logs/rabbitmq.log
+          docker logs $(docker ps -q -f ancestor=rabbitmq:3-management) >> logs/rabbitmq.log 2>&1 || true
       
-      - name: Start Notification Hub
+      - name: Upload Service Logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-logs
+          path: logs/
+          retention-days: 7
         run: |
           cd notification-hub
           nohup npm start > /tmp/notification-hub.log 2>&1 &

@@ -1,42 +1,213 @@
-name: CI Pipeline - E2E Tests
+name: E2E Tests
 
 on:
   workflow_dispatch:
+    inputs:
+      load-test:
+        description: 'Run load testing'
+        required: false
+        default: 'false'
   schedule:
-    - cron: '0 0 * * 0' # Weekly
+    - cron: '0 0 * * 0' # Weekly on Sunday
+
+concurrency:
+  group: e2e-tests-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   e2e-tests:
     name: End-to-End Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       
-      - name: Start Services
-        run: |
-          docker-compose up -d
-          sleep 15
-          docker-compose ps
-      
-      - name: Health Check
-        run: |
-          for port in 3001 3002 3003 3004 3005; do
-            echo "Checking port $port..."
-            curl --retry 5 --retry-delay 2 -f http://localhost:$port/health || (docker-compose logs && exit 1)
-          done
-      
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
       
-      - name: Run E2E Script
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      
+      - name: Start Docker Compose Stack
         run: |
-          npm install
-          npm test -- e2e.test.js
+          echo "Starting Docker Compose services..."
+          docker-compose up -d
+          echo "Waiting for services to stabilize..."
+          sleep 15
+          docker-compose ps
       
-      - name: Cleanup
+      - name: Health Check - API Gateway
+        run: |
+          echo "Checking API Gateway (port 3001)..."
+          for i in {1..30}; do
+            if curl -s -f http://localhost:3001/health > /dev/null 2>&1; then
+              echo "✓ API Gateway is healthy"
+              exit 0
+            fi
+            echo "Attempt $i/30 - waiting for API Gateway..."
+            sleep 2
+          done
+          echo "✗ API Gateway health check failed"
+          exit 1
+      
+      - name: Health Check - Stock Service
+        run: |
+          echo "Checking Stock Service (port 3002)..."
+          for i in {1..30}; do
+            if curl -s -f http://localhost:3002/health > /dev/null 2>&1; then
+              echo "✓ Stock Service is healthy"
+              exit 0
+            fi
+            echo "Attempt $i/30 - waiting for Stock Service..."
+            sleep 2
+          done
+          echo "✗ Stock Service health check failed"
+          exit 1
+      
+      - name: Health Check - Kitchen Queue
+        run: |
+          echo "Checking Kitchen Queue (port 3003)..."
+          for i in {1..30}; do
+            if curl -s -f http://localhost:3003/health > /dev/null 2>&1; then
+              echo "✓ Kitchen Queue is healthy"
+              exit 0
+            fi
+            echo "Attempt $i/30 - waiting for Kitchen Queue..."
+            sleep 2
+          done
+          echo "✗ Kitchen Queue health check failed"
+          exit 1
+      
+      - name: Health Check - Notification Hub
+        run: |
+          echo "Checking Notification Hub (port 3004)..."
+          for i in {1..30}; do
+            if curl -s -f http://localhost:3004/health > /dev/null 2>&1; then
+              echo "✓ Notification Hub is healthy"
+              exit 0
+            fi
+            echo "Attempt $i/30 - waiting for Notification Hub..."
+            sleep 2
+          done
+          echo "✗ Notification Hub health check failed"
+          exit 1
+      
+      - name: Health Check - Admin Dashboard
+        run: |
+          echo "Checking Admin Dashboard (port 5173)..."
+          for i in {1..30}; do
+            if curl -s -f http://localhost:5173 > /dev/null 2>&1; then
+              echo "✓ Admin Dashboard is healthy"
+              exit 0
+            fi
+            echo "Attempt $i/30 - waiting for Admin Dashboard..."
+            sleep 2
+          done
+          echo "✗ Admin Dashboard health check failed"
+          exit 1
+      
+      - name: Collect System Metrics
+        run: |
+          mkdir -p metrics
+          echo "=== Docker Container Stats ===" > metrics/container-stats.txt
+          docker stats --no-stream >> metrics/container-stats.txt
+          
+          echo "=== Network Inspection ===" > metrics/network.txt
+          docker network inspect e2e_network >> metrics/network.txt 2>&1 || true
+          
+          echo "=== Image Sizes ===" > metrics/images.txt
+          docker images >> metrics/images.txt
+      
+      - name: Install E2E Test Dependencies
+        run: npm ci --prefer-offline --no-audit
+      
+      - name: Run E2E Tests
+        run: |
+          echo "Running end-to-end tests..."
+          npm test -- e2e.test.js --timeout 60000 --verbose
+        env:
+          NODE_ENV: test
+          API_GATEWAY_URL: http://localhost:3001
+          STOCK_SERVICE_URL: http://localhost:3002
+          KITCHEN_QUEUE_URL: http://localhost:3003
+          NOTIFICATION_HUB_URL: http://localhost:3004
+      
+      - name: Run Load Testing
+        if: github.event.inputs.load-test == 'true' || github.event_name == 'schedule'
+        run: |
+          echo "Running load tests..."
+          npm install -D autocannon
+          npx autocannon \
+            --connections 10 \
+            --pipelining 1 \
+            --duration 30 \
+            --requests '[{"path":"/health","method":"GET"}]' \
+            http://localhost:3001 > metrics/load-test.txt
+      
+      - name: Security Vulnerability Scan
+        run: |
+          echo "=== Security Vulnerability Scan ===" 
+          mkdir -p security-reports
+          
+          # Check for critical vulnerabilities in dependencies
+          npm audit --audit-level=moderate > security-reports/npm-audit.txt || true
+          
+          # Run security checks on all services
+          for service in identity-provider order-gateway stock-service kitchen-queue notification-hub; do
+            echo "Scanning $service..."
+            (cd "$service" && npm audit --audit-level=moderate >> ../security-reports/npm-audit.txt 2>&1 || true)
+          done
+      
+      - name: Upload Performance Metrics
         if: always()
-        run: docker-compose down -v
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-metrics
+          path: metrics/
+          if-no-files-found: 'warn'
+          retention-days: 30
+      
+      - name: Upload Security Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: security-reports/
+          if-no-files-found: 'warn'
+          retention-days: 30
+      
+      - name: Collect Docker Composition Logs
+        if: failure()
+        run: |
+          mkdir -p compose-logs
+          docker-compose logs > compose-logs/all-services.log 2>&1 || true
+          docker-compose logs api-gateway > compose-logs/api-gateway.log 2>&1 || true
+          docker-compose logs stock-service > compose-logs/stock-service.log 2>&1 || true
+          docker-compose logs kitchen-queue > compose-logs/kitchen-queue.log 2>&1 || true
+          docker-compose logs notification-hub > compose-logs/notification-hub.log 2>&1 || true
+          docker-compose logs mongodb > compose-logs/mongodb.log 2>&1 || true
+          docker-compose logs redis > compose-logs/redis.log 2>&1 || true
+          docker-compose logs rabbitmq > compose-logs/rabbitmq.log 2>&1 || true
+      
+      - name: Upload Docker Composition Logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-logs
+          path: compose-logs/
+          retention-days: 7
+      
+      - name: Cleanup Docker Compose Stack
+        if: always()
+        run: |
+          echo "Cleaning up Docker Compose stack..."
+          docker-compose down -v --remove-orphans
+          docker system prune -f
