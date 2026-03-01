@@ -44,7 +44,7 @@ jobs:
       - name: Install All Dependencies
         run: |
           for dir in identity-provider order-gateway stock-service kitchen-queue notification-hub; do
-            cd $dir && npm ci && cd ..
+            cd $dir && npm install && cd ..
           done
 
       - name: Start Services
@@ -54,14 +54,12 @@ jobs:
           REDIS_URL: redis://localhost:6379
           RABBITMQ_URL: amqp://localhost:5672
         run: |
-          # Use localhost for services because they are running in the runner's network stack
-          # We need to set these env vars for the background processes
           export PORT=3001 && cd identity-provider && nohup npm start > /tmp/identity-provider.log 2>&1 &
           export PORT=3002 && cd ../order-gateway && nohup npm start > /tmp/order-gateway.log 2>&1 &
           export PORT=3003 && cd ../stock-service && nohup npm start > /tmp/stock-service.log 2>&1 &
           export PORT=3004 && cd ../kitchen-queue && nohup npm start > /tmp/kitchen-queue.log 2>&1 &
           export PORT=3005 && cd ../notification-hub && nohup npm start > /tmp/notification-hub.log 2>&1 &
-          sleep 10
+          sleep 15
       
       - name: Health Check
         run: |
@@ -71,7 +69,9 @@ jobs:
           done
       
       - name: Run E2E Tests
-        run: npm test -- e2e.test.js
+        run: |
+          npm install
+          npm test -- e2e.test.js
       
       - name: Collect Logs on Failure
         if: failure()

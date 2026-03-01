@@ -30,25 +30,27 @@ jobs:
             stock-service/package-lock.json
       
       # Identity Provider Tests
-      - name: Identity Provider Unit Tests
+      - name: Identity Provider Tests
         run: |
           cd identity-provider
-          npm ci
+          npm install
           npm test -- tests/auth.test.js
       
       # Order Gateway Tests
-      - name: Order Gateway Unit Tests
+      - name: Order Gateway Tests
         run: |
           cd order-gateway
-          npm ci
+          npm install
           npm test -- tests/validation.test.js
+          npm test -- tests/integration.test.js
       
       # Stock Service Tests
-      - name: Stock Service Unit Tests
+      - name: Stock Service Tests
         run: |
           cd stock-service
-          npm ci
+          npm install
           npm test -- tests/stockUtils.test.js
+          npm test -- tests/integration.test.js
       
       - name: Upload Coverage Results
         if: always()
