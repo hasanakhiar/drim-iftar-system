@@ -8,9 +8,8 @@ For a detailed understanding of the project, please refer to the following docum
 
 1.  **[Requirement Analysis](RequirementAnalysis.md)**: Deep dive into problem statements, identified requirements, and implementation checklist.
 2.  **[Technical Architecture](TechnicalArchitecture.md)**: Detailed overview of system design, component interactions, and data strategy.
+3. ** [Stack Report & Justification](Stack Report & Justification.md)**: Comprehensive analysis of chosen technologies and their suitability for the project. 
 3.  **[Testing Guide](TESTING_GUIDE.md)**: Comprehensive manual for running and understanding the three-tier testing suite.
-4.  **[Submission Deliverables](DELIVERABLES.md)**: Consolidated report for DevSprint 2026 judges.
-5.  **[Project Evolution](PROJECT_EVOLUTION.md)**: Summary of architectural decisions and the development journey.
 
 ---
 
