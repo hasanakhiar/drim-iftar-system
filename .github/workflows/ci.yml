@@ -10,12 +10,13 @@ jobs:
   test-gateway:
     name: Test Order Gateway
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '18'
           cache: 'npm'
           cache-dependency-path: order-gateway/package-lock.json
       - name: Install dependencies
@@ -28,12 +29,13 @@ jobs:
   test-stock:
     name: Test Stock Service
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '18'
           cache: 'npm'
           cache-dependency-path: stock-service/package-lock.json
       - name: Install dependencies

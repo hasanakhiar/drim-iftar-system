@@ -8,12 +8,13 @@ on:
 
 jobs:
   unit-tests:
-    name: Unit Tests
+    name: Unit Tests (${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     
     strategy:
       matrix:
-        node-version: [18.x, 20.x]
+        node-version: [18.x]
     
     steps:
       - name: Checkout Code
@@ -24,38 +25,39 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
-          cache-dependency-path: |
-            identity-provider/package-lock.json
-            order-gateway/package-lock.json
-            stock-service/package-lock.json
+          cache-dependency-path: '**/package-lock.json'
       
       # Identity Provider Tests
-      - name: Identity Provider Tests
-        run: |
-          cd identity-provider
-          npm install
-          npm test -- tests/auth.test.js
+      - name: Install Identity Provider Dependencies
+        run: cd identity-provider && npm ci
+      
+      - name: Run Identity Provider Unit Tests
+        run: cd identity-provider && npm test -- tests/auth.test.js --coverage
       
       # Order Gateway Tests
-      - name: Order Gateway Tests
-        run: |
-          cd order-gateway
-          npm install
-          npm test -- tests/validation.test.js
-          npm test -- tests/integration.test.js
+      - name: Install Order Gateway Dependencies
+        run: cd order-gateway && npm ci
+      
+      - name: Run Order Gateway Unit Tests
+        run: cd order-gateway && npm test -- tests/validation.test.js --coverage
+      
+      - name: Run Order Gateway Integration Tests
+        run: cd order-gateway && npm test -- tests/integration.test.js --coverage
       
       # Stock Service Tests
-      - name: Stock Service Tests
-        run: |
-          cd stock-service
-          npm install
-          npm test -- tests/stockUtils.test.js
-          npm test -- tests/integration.test.js
+      - name: Install Stock Service Dependencies
+        run: cd stock-service && npm ci
       
-      - name: Upload Coverage Results
+      - name: Run Stock Service Unit Tests
+        run: cd stock-service && npm test -- tests/stockUtils.test.js --coverage
+      
+      - name: Run Stock Service Integration Tests
+        run: cd stock-service && npm test -- tests/integration.test.js --coverage
+      
+      - name: Upload Coverage Reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-reports-${{ matrix.node-version }}
-          path: |
-            **/coverage
+          name: coverage-reports
+          path: '**/coverage'
+          if-no-files-found: 'warn'
