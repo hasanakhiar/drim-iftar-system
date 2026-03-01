@@ -113,6 +113,9 @@ app.post('/auth/verify', async (req, res) => {
 
 // GET /health
 app.get('/health', async (req, res) => {
+  if (chaosMode) {
+    return res.status(503).json({ status: 'down', service: 'identity-provider', reason: 'chaos mode' });
+  }
   const mongoUp = mongoose.connection.readyState === 1;
   const status = mongoUp ? 'ok' : 'degraded';
   const code = mongoUp ? 200 : 503;
@@ -131,6 +134,11 @@ app.get('/metrics', (req, res) => {
     failureCount: metrics.failureCount,
     avgLatency: avgLatency(),
   });
+});
+
+// GET /chaos/status
+app.get('/chaos/status', (req, res) => {
+  return res.json({ chaosMode });
 });
 
 // POST /chaos/kill

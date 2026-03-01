@@ -10,56 +10,65 @@ const SERVICES = [
 ]
 
 export default function HealthGrid() {
-  const [statuses, setStatuses] = useState(() =>
-    Object.fromEntries(SERVICES.map((s) => [s.name, { up: null, lastChecked: null }]))
-  )
-
-  const checkHealth = async () => {
-    const now = new Date().toLocaleTimeString()
-    const results = await Promise.allSettled(
-      SERVICES.map((s) => axios.get(`${s.url}/health`, { timeout: 3000 }))
-    )
-    setStatuses(
-      Object.fromEntries(
-        SERVICES.map((s, i) => [
-          s.name,
-          { up: results[i].status === 'fulfilled', lastChecked: now },
-        ])
-      )
-    )
-  }
+  const [health, setHealth] = useState({})
 
   useEffect(() => {
+    const checkHealth = async () => {
+      const statuses = {}
+      await Promise.all(
+        SERVICES.map(async (service) => {
+          try {
+            const resp = await axios.get(`${service.url}/health`, { timeout: 2000 })
+            statuses[service.name] = { status: 'healthy', ...resp.data }
+          } catch (e) {
+            statuses[service.name] = { status: 'down' }
+          }
+        })
+      )
+      setHealth(statuses)
+    }
     checkHealth()
     const interval = setInterval(checkHealth, 5000)
     return () => clearInterval(interval)
   }, [])
 
   return (
-    <section>
-      <h2>Service Health</h2>
-      <div className="health-grid">
+    <div className="card">
+      <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <span style={{ color: 'var(--accent)' }}>📡</span> Service Connectivity
+      </h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         {SERVICES.map((service) => {
-          const info = statuses[service.name]
-          const up = info.up
+          const info = health[service.name] || { status: 'loading' }
+          const isDown = info.status === 'down'
           return (
-            <div key={service.name} className="health-card">
-              <span className={`status-indicator ${up === null ? '' : up ? 'up' : 'down'}`}>
-                ●
-              </span>
-              <strong>{service.name}</strong>
-              <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>
-                {up === null ? 'Checking…' : up ? 'UP' : 'DOWN'}
+            <div
+              key={service.name}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.875rem 1.25rem',
+                backgroundColor: 'rgba(99, 102, 241, 0.04)',
+                borderRadius: '0.75rem',
+                borderLeft: `4px solid ${isDown ? 'var(--danger)' : 'var(--success)'}`,
+                borderTop: '1px solid var(--border)',
+                borderRight: '1px solid var(--border)',
+                borderBottom: '1px solid var(--border)',
+              }}
+            >
+              <div style={{ textTransform: 'capitalize', fontWeight: '600', color: 'var(--text-main)' }}>
+                {service.name.replace('-', ' ')}
               </div>
-              {info.lastChecked && (
-                <div style={{ fontSize: '0.75rem', color: '#718096', marginTop: '0.25rem' }}>
-                  Last checked: {info.lastChecked}
-                </div>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span className={`status-pill ${isDown ? 'danger' : 'success'}`}>
+                  {isDown ? 'OFFLINE' : 'ONLINE'}
+                </span>
+              </div>
             </div>
           )
         })}
       </div>
-    </section>
+    </div>
   )
 }

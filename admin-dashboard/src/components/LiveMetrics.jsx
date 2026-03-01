@@ -2,67 +2,65 @@ import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 
 const SERVICES = [
-  { name: 'identity-provider', url: 'http://localhost:3001' },
-  { name: 'order-gateway', url: 'http://localhost:3002' },
-  { name: 'stock-service', url: 'http://localhost:3003' },
-  { name: 'kitchen-queue', url: 'http://localhost:3004' },
-  { name: 'notification-hub', url: 'http://localhost:3005' },
+  { name: 'Identity Provider', url: 'http://localhost:3001' },
+  { name: 'Order Gateway', url: 'http://localhost:3002' },
+  { name: 'Stock Service', url: 'http://localhost:3003' },
+  { name: 'Kitchen Queue', url: 'http://localhost:3004' },
+  { name: 'Notification Hub', url: 'http://localhost:3005' },
 ]
 
 export default function LiveMetrics() {
-  const [metrics, setMetrics] = useState(() =>
-    Object.fromEntries(SERVICES.map((s) => [s.name, null]))
-  )
-
-  const fetchMetrics = async () => {
-    const results = await Promise.allSettled(
-      SERVICES.map((s) => axios.get(`${s.url}/metrics`, { timeout: 3000 }))
-    )
-    setMetrics(
-      Object.fromEntries(
-        SERVICES.map((s, i) => [
-          s.name,
-          results[i].status === 'fulfilled' ? results[i].value.data : null,
-        ])
-      )
-    )
-  }
+  const [metrics, setMetrics] = useState({})
 
   useEffect(() => {
+    const fetchMetrics = async () => {
+      const data = {}
+      await Promise.all(
+        SERVICES.map(async (s) => {
+          try {
+            const resp = await axios.get(`${s.url}/metrics`)
+            data[s.name] = resp.data
+          } catch (e) {}
+        })
+      )
+      setMetrics(data)
+    }
     fetchMetrics()
     const interval = setInterval(fetchMetrics, 3000)
     return () => clearInterval(interval)
   }, [])
 
   return (
-    <section style={{ marginTop: '2rem' }}>
-      <h2>Live Metrics</h2>
-      <div className="metrics-grid">
-        {SERVICES.map((service) => {
-          const data = metrics[service.name]
-          return (
-            <div key={service.name} className="metric-card">
-              <strong style={{ display: 'block', marginBottom: '0.5rem' }}>
-                {service.name}
-              </strong>
-              {data === null ? (
-                <span style={{ color: '#718096', fontSize: '0.85rem' }}>Unavailable</span>
-              ) : (
-                <>
-                  <div>Requests: {data.totalRequests ?? data.totalProcessed ?? '—'}</div>
-                  <div>Failures: {data.failureCount ?? '—'}</div>
-                  <div>Avg Latency: {data.avgLatency != null ? `${data.avgLatency} ms` : '—'}</div>
-                  {service.name === 'order-gateway' && data.alert && (
-                    <div className="alert-banner" style={{ marginTop: '0.5rem' }}>
-                      ⚠️ High Latency Alert!
-                    </div>
-                  )}
-                </>
-              )}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', width: '100%' }}>
+      {SERVICES.map((s) => {
+        const m = metrics[s.name] || {}
+        const totalValue = m.totalRequests ?? m.totalProcessed ?? m.totalNotifications ?? 0
+        const label = s.name === 'Notification Hub' ? 'Notifications Sent' : 
+                      s.name === 'Kitchen Queue' ? 'Orders Prepared' : 'Total Requests'
+
+        return (
+          <div key={s.name} className="card" style={{ marginBottom: 0, padding: '1.25rem' }}>
+            <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>
+              {s.name}
             </div>
-          )
-        })}
-      </div>
-    </section>
+            <div style={{ marginBottom: '0.25rem' }}>
+              <span style={{ fontSize: '1.5rem', fontWeight: '700' }}>{totalValue}</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginLeft: '0.5rem' }}>{label}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>Avg Latency:</span>
+              <span style={{ color: (m.avgLatency > 1000 || m.alert) ? 'var(--danger)' : 'var(--success)', fontWeight: '600' }}>
+                {Math.round(m.avgLatency || 0)}ms
+              </span>
+            </div>
+            {m.failureCount > 0 && (
+              <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                ⚠️ {m.failureCount} errors detected
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
   )
 }

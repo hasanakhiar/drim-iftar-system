@@ -18,37 +18,53 @@ export default function Login({ setToken }) {
       })
       setToken(data.token)
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed. Please try again.')
+      setError(err.response?.data?.error || 'Login failed. Please try again.')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div>
+    <div className="login-card card" style={{ maxWidth: '400px', margin: '2rem auto' }}>
       <h2>Student Login</h2>
-      <form onSubmit={handleSubmit}>
-        <label>Student ID</label>
-        <input
-          type="text"
-          placeholder="Enter your student ID"
-          value={studentId}
-          onChange={(e) => setStudentId(e.target.value)}
-          required
-        />
-        <label>Password</label>
-        <input
-          type="password"
-          placeholder="Enter your password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        {error && <p className="error">{error}</p>}
-        <button type="submit" disabled={loading}>
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
+        <div className="form-group">
+          <label>Student ID</label>
+          <input
+            type="text"
+            className="form-input"
+            placeholder="Enter your student ID"
+            value={studentId}
+            onChange={(e) => setStudentId(e.target.value)}
+            required
+            style={{ width: '100%' }}
+          />
+        </div>
+        <div className="form-group">
+          <label>Password</label>
+          <input
+            type="password"
+            className="form-input"
+            placeholder="Enter your password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            style={{ width: '100%' }}
+          />
+        </div>
+        {error && <p style={{ color: '#e53e3e', fontSize: '0.875rem' }}>{error}</p>}
+        <button 
+          className="btn btn-primary" 
+          type="submit" 
+          disabled={loading}
+          style={{ padding: '0.75rem', fontWeight: 'bold' }}
+        >
           {loading ? 'Logging in…' : 'Login'}
         </button>
       </form>
+      <div style={{ marginTop: '1.5rem', fontSize: '0.8rem', color: '#718096', textAlign: 'center' }}>
+        Try STU001 / password123
+      </div>
     </div>
   )
 }

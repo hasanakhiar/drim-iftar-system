@@ -5,6 +5,8 @@ const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const Redis = require('ioredis');
 const amqplib = require('amqplib');
+const mongoose = require('mongoose');
+
 // Use crypto.randomUUID (Node 14.17+), else fallback
 function generateId() {
   try { return require('crypto').randomUUID(); } catch { return Math.random().toString(36).slice(2); }
@@ -29,6 +31,7 @@ app.use((req, res, next) => {
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const REDIS_URL = process.env.REDIS_URL || 'redis://redis:6379';
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://rabbitmq:5672';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://mongodb:27017/cafeteria';
 const IDENTITY_PROVIDER_URL = process.env.IDENTITY_PROVIDER_URL || 'http://identity-provider:3001';
 
 // Metrics
@@ -43,7 +46,6 @@ function recordRequest(latency, failed = false) {
 
   const now = Date.now();
   metrics.windowLatencies.push({ latency, time: now });
-  // Prune entries outside 30s window
   metrics.windowLatencies = metrics.windowLatencies.filter(e => now - e.time <= WINDOW_MS);
   const windowAvg = metrics.windowLatencies.length
     ? metrics.windowLatencies.reduce((a, b) => a + b.latency, 0) / metrics.windowLatencies.length
@@ -56,8 +58,19 @@ function avgLatency() {
   return metrics.latencies.reduce((a, b) => a + b, 0) / metrics.latencies.length;
 }
 
-// In-memory order store
-const orderStore = {};
+// Order Schema
+const orderSchema = new mongoose.Schema({
+  orderId: { type: String, required: true, unique: true },
+  studentId: { type: String, required: true },
+  itemId: { type: String, required: true },
+  quantity: { type: Number, required: true },
+  status: { type: String, required: true, default: 'pending' },
+  createdAt: { type: Date, default: Date.now },
+});
+const Order = mongoose.model('Order', orderSchema);
+
+// Connect to MongoDB
+mongoose.connect(MONGO_URI).then(() => console.log('Connected to MongoDB')).catch(err => console.error('MongoDB connection error:', err));
 
 // Redis client
 const redis = new Redis(REDIS_URL, { lazyConnect: true, enableOfflineQueue: false });
@@ -100,20 +113,34 @@ async function authMiddleware(req, res, next) {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
     return next();
-  } catch {
-    // Fall back to identity-provider verification
+  } catch (err) {
+    // Fall back to identity-provider verification if local fails (e.g. signature error)
     try {
-      const resp = await axios.post(`${IDENTITY_PROVIDER_URL}/auth/verify`, { token }, { timeout: 3000 });
+      const resp = await axios.post(`${IDENTITY_PROVIDER_URL}/auth/verify`, { token }, { timeout: 5000 });
       if (resp.data && resp.data.valid) {
         req.user = resp.data.decoded;
         return next();
       }
       return res.status(401).json({ error: 'Invalid or expired token' });
-    } catch {
-      return res.status(401).json({ error: 'Token verification failed' });
+    } catch (axiosErr) {
+      console.error('Identity provider communication error:', axiosErr.message);
+      if (axiosErr.response) {
+        return res.status(axiosErr.response.status).json(axiosErr.response.data);
+      }
+      return res.status(401).json({ error: 'Token verification failed: authentication service unreachable' });
     }
   }
 }
+
+// GET /stock - Proxy to stock-service
+app.get('/stock', async (req, res) => {
+  try {
+    const resp = await axios.get('http://stock-service:3003/stock', { timeout: 8000 });
+    return res.json(resp.data);
+  } catch (err) {
+    return res.status(503).json({ error: 'Stock service unavailable' });
+  }
+});
 
 // POST /orders
 app.post('/orders', authMiddleware, async (req, res) => {
@@ -125,7 +152,6 @@ app.post('/orders', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'itemId is required' });
     }
 
-    // Check stock in Redis cache
     const stockKey = `stock:${itemId}`;
     const cachedStock = await redis.get(stockKey).catch(() => null);
     if (cachedStock !== null && parseInt(cachedStock, 10) <= 0) {
@@ -139,25 +165,28 @@ app.post('/orders', authMiddleware, async (req, res) => {
     }
 
     const orderId = generateId();
-    const order = {
+    const orderData = {
       orderId,
       itemId,
       quantity,
       studentId: req.user.studentId,
       status: 'pending',
-      createdAt: new Date().toISOString(),
     };
 
-    orderStore[orderId] = order;
+    // Persist to DB
+    const dbOrder = await Order.create(orderData);
+    
+    // Persist status in Redis
     const ORDER_STATUS_EXPIRY = 3600;
     await redis.set(`order_status:${orderId}`, 'pending', 'EX', ORDER_STATUS_EXPIRY).catch(() => {});
 
-    rabbitChannel.sendToQueue('orders', Buffer.from(JSON.stringify(order)), { persistent: true });
+    rabbitChannel.sendToQueue('orders', Buffer.from(JSON.stringify(orderData)), { persistent: true });
     
-    // Publish confirmed status to notification hub for real-time feedback
     if (notificationChannel) {
       const confirmedMsg = { orderId, status: 'confirmed', timestamp: new Date().toISOString() };
       await redis.set(`order_status:${orderId}`, 'confirmed', 'EX', ORDER_STATUS_EXPIRY).catch(() => {});
+      // Update DB status
+      await Order.updateOne({ orderId }, { status: 'confirmed' });
       notificationChannel.sendToQueue('order-updates', Buffer.from(JSON.stringify(confirmedMsg)), { persistent: true });
     }
 
@@ -169,18 +198,32 @@ app.post('/orders', authMiddleware, async (req, res) => {
   }
 });
 
+// GET /orders - Fetch history for the authenticated student
+app.get('/orders', authMiddleware, async (req, res) => {
+  try {
+    const orders = await Order.find({ studentId: req.user.studentId }).sort({ createdAt: -1 });
+    return res.json(orders);
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /admin/orders - Fetch all orders from DB
+app.get('/admin/orders', async (req, res) => {
+  try {
+    const orders = await Order.find().sort({ createdAt: -1 }).limit(100);
+    return res.json(orders);
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /orders/:orderId
 app.get('/orders/:orderId', authMiddleware, async (req, res) => {
   const start = Date.now();
   try {
     const { orderId } = req.params;
-    // Check Redis first
-    const cached = await redis.get(`order:${orderId}`).catch(() => null);
-    if (cached) {
-      recordRequest(Date.now() - start);
-      return res.json(JSON.parse(cached));
-    }
-    const order = orderStore[orderId];
+    const order = await Order.findOne({ orderId });
     if (!order) {
       recordRequest(Date.now() - start, true);
       return res.status(404).json({ error: 'Order not found' });
@@ -195,12 +238,13 @@ app.get('/orders/:orderId', authMiddleware, async (req, res) => {
 
 // GET /health
 app.get('/health', async (req, res) => {
+  if (chaosMode) {
+    return res.status(503).json({ status: 'down', service: 'order-gateway', reason: 'chaos mode' });
+  }
   let redisUp = false;
   let rabbitUp = false;
-
   try { await redis.ping(); redisUp = true; } catch {}
   rabbitUp = rabbitChannel !== null;
-
   const ok = redisUp && rabbitUp;
   return res.status(ok ? 200 : 503).json({
     status: ok ? 'ok' : 'degraded',
@@ -220,17 +264,20 @@ app.get('/metrics', (req, res) => {
   });
 });
 
+// GET /chaos/status
+app.get('/chaos/status', (req, res) => {
+  return res.json({ chaosMode });
+});
+
 // POST /chaos/kill
 app.post('/chaos/kill', (req, res) => {
   chaosMode = true;
-  console.log('Chaos mode ENABLED - service will reject requests');
   return res.json({ status: 'killed', chaosMode: true });
 });
 
 // POST /chaos/revive
 app.post('/chaos/revive', (req, res) => {
   chaosMode = false;
-  console.log('Chaos mode DISABLED - service operational');
   return res.json({ status: 'alive', chaosMode: false });
 });
 

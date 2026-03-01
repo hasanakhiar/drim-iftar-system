@@ -14,7 +14,7 @@ const PORT = process.env.PORT || 3003;
 // Chaos mode
 let chaosMode = false;
 
-// Chaos middleware - reject all requests except health and chaos endpoints
+// Chaos middleware
 app.use((req, res, next) => {
   if (chaosMode && !req.path.startsWith('/health') && !req.path.startsWith('/chaos') && !req.path.startsWith('/metrics')) {
     return res.status(503).json({ error: 'Service temporarily unavailable (chaos mode)' });
@@ -40,13 +40,12 @@ function avgLatency() {
   return metrics.latencies.reduce((a, b) => a + b, 0) / metrics.latencies.length;
 }
 
-// Item schema with optimistic locking via __v (versionKey)
+// Item schema with optimistic locking
 const itemSchema = new mongoose.Schema({
   itemId: { type: String, required: true, unique: true },
   name: { type: String, required: true },
   stock: { type: Number, required: true, default: 0 },
 });
-// Mongoose uses __v as the version key by default
 const Item = mongoose.model('Item', itemSchema);
 
 // Redis client
@@ -57,16 +56,28 @@ redis.connect().catch(() => {});
 let rabbitConn = null;
 let rabbitChannel = null;
 let statusChannel = null;
+let reconnectTimeout = null;
 
 async function connectRabbit() {
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout);
+    reconnectTimeout = null;
+  }
+
   if (chaosMode) {
-    setTimeout(connectRabbit, 5000);
+    reconnectTimeout = setTimeout(connectRabbit, 5000);
     return;
   }
   try {
     rabbitConn = await amqplib.connect(RABBITMQ_URL);
-    rabbitConn.on('error', () => { rabbitChannel = null; statusChannel = null; stockConsumerTag = null; setTimeout(connectRabbit, 5000); });
-    rabbitConn.on('close', () => { rabbitChannel = null; statusChannel = null; stockConsumerTag = null; setTimeout(connectRabbit, 5000); });
+    rabbitConn.on('error', () => { 
+      rabbitChannel = null; statusChannel = null; stockConsumerTag = null; 
+      if (!reconnectTimeout) reconnectTimeout = setTimeout(connectRabbit, 5000); 
+    });
+    rabbitConn.on('close', () => { 
+      rabbitChannel = null; statusChannel = null; stockConsumerTag = null; 
+      if (!reconnectTimeout) reconnectTimeout = setTimeout(connectRabbit, 5000); 
+    });
 
     rabbitChannel = await rabbitConn.createChannel();
     await rabbitChannel.assertQueue('orders', { durable: true });
@@ -74,8 +85,6 @@ async function connectRabbit() {
 
     statusChannel = await rabbitConn.createChannel();
     await statusChannel.assertQueue('order-status', { durable: true });
-    
-    // Also assert order-updates for UI feedback
     await statusChannel.assertQueue('order-updates', { durable: true });
 
     console.log('Connected to RabbitMQ');
@@ -85,7 +94,7 @@ async function connectRabbit() {
     rabbitChannel = null;
     statusChannel = null;
     stockConsumerTag = null;
-    setTimeout(connectRabbit, 5000);
+    if (!reconnectTimeout) reconnectTimeout = setTimeout(connectRabbit, 5000);
   }
 }
 
@@ -103,41 +112,42 @@ async function processOrderWithRetry(order, maxRetries = 3) {
     const item = await Item.findOne({ itemId });
     if (!item) throw new Error(`Item ${itemId} not found`);
 
-    const currentVersion = item.__v;
-    if (item.stock < quantity) throw new Error('Insufficient stock');
+    if (item.stock < quantity) {
+      const failMsg = { orderId, status: 'failed_insufficient_stock', itemId, timestamp: new Date().toISOString() };
+      if (statusChannel) {
+        statusChannel.sendToQueue('order-updates', Buffer.from(JSON.stringify(failMsg)), { persistent: true });
+      }
+      throw new Error('Insufficient stock');
+    }
 
-    // Optimistic lock: update only if __v hasn't changed
     const updated = await Item.findOneAndUpdate(
-      { itemId, __v: currentVersion },
+      { itemId, __v: item.__v },
       { $inc: { stock: -quantity, __v: 1 } },
       { new: true }
     );
 
     if (!updated) {
-      // Version conflict - retry
       console.log(`Version conflict for ${itemId}, attempt ${attempt + 1}`);
       continue;
     }
 
-    // Update Redis cache
     await redis.set(`stock:${itemId}`, updated.stock).catch(() => {});
-
-    // Publish to order-status queue
-    const statusMsg = { orderId, status: 'stock_verified', itemId, timestamp: new Date().toISOString() };
-    const ORDER_STATUS_EXPIRY = 3600;
-    await redis.set(`order_status:${orderId}`, 'stock_verified', 'EX', ORDER_STATUS_EXPIRY).catch(() => {});
-    statusChannel.sendToQueue('order-status', Buffer.from(JSON.stringify(statusMsg)), { persistent: true });
     
-    // Also publish to order-updates for UI
-    statusChannel.sendToQueue('order-updates', Buffer.from(JSON.stringify(statusMsg)), { persistent: true });
+    // Simulate visible processing delay
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
-    // Mark as processed (idempotency)
+    const statusMsg = { orderId, status: 'stock_verified', itemId, timestamp: new Date().toISOString() };
+    await redis.set(`order_status:${orderId}`, 'stock_verified', 'EX', 3600).catch(() => {});
+    
+    if (statusChannel) {
+      statusChannel.sendToQueue('order-status', Buffer.from(JSON.stringify(statusMsg)), { persistent: true });
+      statusChannel.sendToQueue('order-updates', Buffer.from(JSON.stringify(statusMsg)), { persistent: true });
+    }
+
     await redis.set(`processed:${orderId}`, '1', 'EX', 86400).catch(() => {});
-
-    return { success: true, updatedItem: updated };
+    return { success: true };
   }
-
-  throw new Error(`Failed to update stock for ${itemId} after ${maxRetries} retries (optimistic lock)`);
+  throw new Error(`Failed to update stock for ${itemId} after retries`);
 }
 
 let stockConsumerTag = null;
@@ -145,7 +155,6 @@ let stockConsumerTag = null;
 async function consumeOrders() {
   if (chaosMode) return;
   if (!rabbitChannel || stockConsumerTag) return;
-  console.log('Starting stock-service consumer...');
   try {
     const result = await rabbitChannel.consume('orders', async (msg) => {
       if (!msg) return;
@@ -158,7 +167,7 @@ async function consumeOrders() {
       } catch (err) {
         console.error('Error processing order:', err.message);
         recordRequest(Date.now() - start, true);
-        if (rabbitChannel) rabbitChannel.nack(msg, false, false); // Dead-letter, don't requeue
+        if (rabbitChannel) rabbitChannel.nack(msg, false, true); // Requeue on failure
       }
     });
     stockConsumerTag = result.consumerTag;
@@ -169,6 +178,10 @@ async function consumeOrders() {
 }
 
 async function stopConsuming() {
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout);
+    reconnectTimeout = null;
+  }
   if (rabbitConn) {
     console.log('Closing RabbitMQ connection (Chaos Mode)...');
     const conn = rabbitConn;
@@ -180,116 +193,63 @@ async function stopConsuming() {
   }
 }
 
-// POST /stock
-app.post('/stock', async (req, res) => {
+// Endpoints
+app.get('/stock', async (req, res) => {
   try {
-    const { itemId, name, stock } = req.body;
-    if (!itemId || !name || stock === undefined) {
-      return res.status(400).json({ error: 'itemId, name, and stock are required' });
-    }
-    const item = await Item.findOneAndUpdate(
-      { itemId },
-      { name, stock },
-      { upsert: true, new: true }
-    );
-    await redis.set(`stock:${itemId}`, item.stock).catch(() => {});
-    return res.status(200).json(item);
+    const items = await Item.find({});
+    return res.json(items);
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// GET /stock/:itemId
-app.get('/stock/:itemId', async (req, res) => {
-  try {
-    const { itemId } = req.params;
-    // Try Redis cache first
-    const cached = await redis.get(`stock:${itemId}`).catch(() => null);
-    if (cached !== null) {
-      return res.json({ itemId, stock: parseInt(cached, 10), source: 'cache' });
-    }
-    const item = await Item.findOne({ itemId });
-    if (!item) return res.status(404).json({ error: 'Item not found' });
-    return res.json({ itemId: item.itemId, name: item.name, stock: item.stock, source: 'db' });
-  } catch (err) {
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// GET /health
 app.get('/health', async (req, res) => {
-  if (chaosMode) {
-    return res.status(503).json({ status: 'down', service: 'stock-service', reason: 'chaos mode' });
-  }
+  if (chaosMode) return res.status(503).json({ status: 'down' });
   const mongoUp = mongoose.connection.readyState === 1;
-  let redisUp = false;
-  try { await redis.ping(); redisUp = true; } catch {}
-
-  const ok = mongoUp && redisUp;
-  return res.status(ok ? 200 : 503).json({
-    status: ok ? 'ok' : 'degraded',
-    service: 'stock-service',
-    dependencies: { mongodb: mongoUp ? 'up' : 'down', redis: redisUp ? 'up' : 'down' },
-  });
+  return res.status(mongoUp ? 200 : 503).json({ status: mongoUp ? 'ok' : 'down' });
 });
 
-// GET /metrics
-app.get('/metrics', (req, res) => {
-  return res.json({
-    service: 'stock-service',
-    totalProcessed: metrics.totalProcessed,
-    failureCount: metrics.failureCount,
-    avgLatency: avgLatency(),
-  });
-});
+app.get('/metrics', (req, res) => res.json({
+  service: 'stock-service',
+  totalProcessed: metrics.totalProcessed,
+  failureCount: metrics.failureCount,
+  avgLatency: avgLatency(),
+}));
 
-// POST /chaos/kill
+app.get('/chaos/status', (req, res) => res.json({ chaosMode }));
+
 app.post('/chaos/kill', async (req, res) => {
   chaosMode = true;
   await stopConsuming();
-  console.log('Chaos mode ENABLED - service will reject requests and stop processing');
   return res.json({ status: 'killed', chaosMode: true });
 });
 
-// POST /chaos/revive
 app.post('/chaos/revive', async (req, res) => {
   chaosMode = false;
-  await consumeOrders();
-  console.log('Chaos mode DISABLED - service operational and processing resumed');
+  await connectRabbit();
   return res.json({ status: 'alive', chaosMode: false });
 });
-
-// Seed items
-const SEED_ITEMS = [
-  { itemId: 'ITEM001', name: 'Biryani', stock: 100 },
-  { itemId: 'ITEM002', name: 'Rice', stock: 50 },
-  { itemId: 'ITEM003', name: 'Kebab', stock: 30 },
-];
 
 async function connectAndSeed() {
   try {
     await mongoose.connect(MONGO_URI);
     console.log('Connected to MongoDB');
-
+    const SEED_ITEMS = [
+      { itemId: 'ITEM001', name: 'Biryani', stock: 100 },
+      { itemId: 'ITEM002', name: 'Rice', stock: 50 },
+      { itemId: 'ITEM003', name: 'Kebab', stock: 30 },
+    ];
     for (const item of SEED_ITEMS) {
-      const existing = await Item.findOne({ itemId: item.itemId });
-      if (!existing) {
-        await Item.create(item);
-        await redis.set(`stock:${item.itemId}`, item.stock).catch(() => {});
-        console.log(`Seeded item ${item.itemId}`);
-      }
+      await Item.findOneAndUpdate({ itemId: item.itemId }, item, { upsert: true });
+      await redis.set(`stock:${item.itemId}`, item.stock).catch(() => {});
     }
   } catch (err) {
-    console.error('MongoDB connection error:', err.message);
+    console.error('MongoDB error:', err.message);
     setTimeout(connectAndSeed, 5000);
   }
 }
 
 connectAndSeed();
 connectRabbit();
-
-const server = app.listen(PORT, () => {
-  console.log(`stock-service running on port ${PORT}`);
-});
-
+const server = app.listen(PORT, () => console.log(`stock-service running on port ${PORT}`));
 module.exports = { app, server };

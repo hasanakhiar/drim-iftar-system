@@ -12,13 +12,14 @@ const PORT = process.env.PORT || 3004;
 // Chaos mode
 let chaosMode = false;
 
-// Chaos middleware - reject all requests except health and chaos endpoints
+// Chaos middleware
 app.use((req, res, next) => {
   if (chaosMode && !req.path.startsWith('/health') && !req.path.startsWith('/chaos') && !req.path.startsWith('/metrics')) {
     return res.status(503).json({ error: 'Service temporarily unavailable (chaos mode)' });
   }
   next();
 });
+
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://rabbitmq:5672';
 const REDIS_URL = process.env.REDIS_URL || 'redis://redis:6379';
 const Redis = require('ioredis');
@@ -43,21 +44,27 @@ function avgLatency() {
 let rabbitConn = null;
 let consumeChannel = null;
 let publishChannel = null;
+let reconnectTimeout = null;
 
 async function connectRabbit() {
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout);
+    reconnectTimeout = null;
+  }
+
   if (chaosMode) {
-    setTimeout(connectRabbit, 5000);
+    reconnectTimeout = setTimeout(connectRabbit, 5000);
     return;
   }
   try {
     rabbitConn = await amqplib.connect(RABBITMQ_URL);
     rabbitConn.on('error', () => {
       consumeChannel = null; publishChannel = null; kitchenConsumerTag = null;
-      setTimeout(connectRabbit, 5000);
+      if (!reconnectTimeout) reconnectTimeout = setTimeout(connectRabbit, 5000);
     });
     rabbitConn.on('close', () => {
       consumeChannel = null; publishChannel = null; kitchenConsumerTag = null;
-      setTimeout(connectRabbit, 5000);
+      if (!reconnectTimeout) reconnectTimeout = setTimeout(connectRabbit, 5000);
     });
 
     consumeChannel = await rabbitConn.createChannel();
@@ -72,9 +79,10 @@ async function connectRabbit() {
   } catch (err) {
     console.error('RabbitMQ connection error:', err.message);
     consumeChannel = null; publishChannel = null; kitchenConsumerTag = null;
-    setTimeout(connectRabbit, 5000);
+    if (!reconnectTimeout) reconnectTimeout = setTimeout(connectRabbit, 5000);
   }
 }
+
 
 let kitchenConsumerTag = null;
 
@@ -90,7 +98,6 @@ async function consumeOrderStatus() {
         const data = JSON.parse(msg.content.toString());
 
         if (data.status !== 'stock_verified') {
-          // Not for us, ack and skip
           if (consumeChannel) consumeChannel.ack(msg);
           return;
         }
@@ -100,11 +107,15 @@ async function consumeOrderStatus() {
         // ACK immediately (< 2s requirement)
         if (consumeChannel) consumeChannel.ack(msg);
 
-        // Publish in_kitchen status
-        const inKitchenMsg = { orderId, status: 'in_kitchen', timestamp: new Date().toISOString() };
+        // Update Redis status
         const ORDER_STATUS_EXPIRY = 3600;
         await redis.set(`order_status:${orderId}`, 'in_kitchen', 'EX', ORDER_STATUS_EXPIRY).catch(() => {});
-        if (publishChannel) publishChannel.sendToQueue('order-updates', Buffer.from(JSON.stringify(inKitchenMsg)), { persistent: true });
+
+        // Publish in_kitchen status
+        const inKitchenMsg = { orderId, status: 'in_kitchen', timestamp: new Date().toISOString() };
+        if (publishChannel) {
+          publishChannel.sendToQueue('order-updates', Buffer.from(JSON.stringify(inKitchenMsg)), { persistent: true });
+        }
 
         recordRequest(Date.now() - start);
 
@@ -113,18 +124,19 @@ async function consumeOrderStatus() {
         setTimeout(async () => {
           try {
             const readyMsg = { orderId, status: 'ready', timestamp: new Date().toISOString() };
+            // Update Redis status to ready
+            await redis.set(`order_status:${orderId}`, 'ready', 'EX', ORDER_STATUS_EXPIRY).catch(() => {});
             if (publishChannel) {
-              await redis.set(`order_status:${orderId}`, 'ready', 'EX', ORDER_STATUS_EXPIRY).catch(() => {});
               publishChannel.sendToQueue('order-updates', Buffer.from(JSON.stringify(readyMsg)), { persistent: true });
             }
           } catch (err) {
-            console.error('Error publishing ready status:', err.message);
+            console.error('Error updating status to ready:', err.message);
           }
         }, cookTime);
       } catch (err) {
         console.error('Error processing order-status message:', err.message);
         recordRequest(Date.now() - start, true);
-        if (consumeChannel) consumeChannel.nack(msg, false, false);
+        if (consumeChannel) consumeChannel.nack(msg, false, true); // Requeue on failure
       }
     });
     kitchenConsumerTag = result.consumerTag;
@@ -135,6 +147,10 @@ async function consumeOrderStatus() {
 }
 
 async function stopConsuming() {
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout);
+    reconnectTimeout = null;
+  }
   if (rabbitConn) {
     console.log('Closing RabbitMQ connection (Chaos Mode)...');
     const conn = rabbitConn;
@@ -169,6 +185,11 @@ app.get('/metrics', (req, res) => {
   });
 });
 
+// GET /chaos/status
+app.get('/chaos/status', (req, res) => {
+  return res.json({ chaosMode });
+});
+
 // POST /chaos/kill
 app.post('/chaos/kill', async (req, res) => {
   chaosMode = true;
@@ -180,7 +201,7 @@ app.post('/chaos/kill', async (req, res) => {
 // POST /chaos/revive
 app.post('/chaos/revive', async (req, res) => {
   chaosMode = false;
-  await consumeOrderStatus();
+  await connectRabbit();
   console.log('Chaos mode DISABLED - service operational and processing resumed');
   return res.json({ status: 'alive', chaosMode: false });
 });
