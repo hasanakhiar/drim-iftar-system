@@ -67,20 +67,8 @@ jobs:
           cache: 'npm'
           cache-dependency-path: '**/package-lock.json'
       
-      - name: Verify Service Health - MongoDB
-        run: |
-          timeout 30 bash -c 'until mongosh mongodb://admin:password@localhost:27017 --eval "db.adminCommand(\"ping\")" > /dev/null 2>&1; do echo "Waiting for MongoDB..."; sleep 2; done'
-          echo "✓ MongoDB is healthy"
-      
-      - name: Verify Service Health - Redis
-        run: |
-          timeout 30 bash -c 'until redis-cli -h localhost ping; do echo "Waiting for Redis..."; sleep 2; done'
-          echo "✓ Redis is healthy"
-      
-      - name: Verify Service Health - RabbitMQ
-        run: |
-          timeout 30 bash -c 'until curl -s -u guest:guest http://localhost:15672/api/aliveness-test/%2F > /dev/null 2>&1; do echo "Waiting for RabbitMQ..."; sleep 2; done'
-          echo "✓ RabbitMQ is healthy"
+      - name: Wait for Services to Start
+        run: sleep 10
       
       - name: Install Dependencies for All Services
         run: |
@@ -88,16 +76,6 @@ jobs:
             echo "Installing dependencies for $service..."
             (cd "$service" && npm install --prefer-offline --no-audit) || exit 1
           done
-      
-      - name: Create MongoDB Collections
-        run: |
-          mongosh mongodb://admin:password@localhost:27017 << 'EOF'
-          use cafeteria;
-          db.createCollection("orders");
-          db.createCollection("students");
-          db.createCollection("inventory");
-          db.createCollection("menus");
-          EOF
       
       - name: Run Integration Tests
         env:

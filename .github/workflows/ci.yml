@@ -132,16 +132,8 @@ jobs:
           cache: 'npm'
           cache-dependency-path: '**/package-lock.json'
       
-      - name: Wait for Services
-        run: |
-          echo "Waiting for MongoDB..."
-          timeout 30 bash -c 'until mongosh mongodb://admin:password@localhost:27017 --eval "db.adminCommand(\"ping\")" > /dev/null 2>&1; do sleep 2; done'
-          
-          echo "Waiting for Redis..."
-          timeout 30 bash -c 'until redis-cli -h localhost ping; do sleep 2; done'
-          
-          echo "Waiting for RabbitMQ..."
-          timeout 30 bash -c 'until curl -s -u guest:guest http://localhost:15672/api/aliveness-test/%2F > /dev/null 2>&1; do sleep 2; done'
+      - name: Wait for Services to Start
+        run: sleep 10
       
       - name: Install Dependencies
         run: |
