@@ -207,7 +207,17 @@ app.post('/orders', authMiddleware, async (req, res) => {
 app.get('/orders', authMiddleware, async (req, res) => {
   try {
     const orders = await Order.find({ studentId: req.user.studentId }).sort({ createdAt: -1 });
-    return res.json(orders);
+    
+    // Enrich each order status from Redis (live status)
+    const enriched = await Promise.all(orders.map(async (order) => {
+      const redisStatus = await redis.get(`order_status:${order.orderId}`).catch(() => null);
+      return {
+        ...order.toObject(),
+        status: redisStatus || order.status
+      };
+    }));
+    
+    return res.json(enriched);
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
   }
