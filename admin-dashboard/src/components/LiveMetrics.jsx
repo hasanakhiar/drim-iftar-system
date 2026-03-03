@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 
 const SERVICES = [
-  { name: 'Identity Provider', url: 'http://localhost:3001' },
-  { name: 'Order Gateway', url: 'http://localhost:3002' },
-  { name: 'Stock Service', url: 'http://localhost:3003' },
-  { name: 'Kitchen Queue', url: 'http://localhost:3004' },
-  { name: 'Notification Hub', url: 'http://localhost:3005' },
+  { name: 'Identity Provider', url: import.meta.env.VITE_IDENTITY_PROVIDER_URL || 'http://localhost:3001' },
+  { name: 'Order Gateway', url: import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:3002' },
+  { name: 'Stock Service', url: import.meta.env.VITE_STOCK_SERVICE_URL || 'http://localhost:3003' },
+  { name: 'Kitchen Queue', url: import.meta.env.VITE_KITCHEN_QUEUE_URL || 'http://localhost:3004' },
+  { name: 'Notification Hub', url: import.meta.env.VITE_NOTIFICATION_HUB_URL || 'http://localhost:3005' },
 ]
 
 export default function LiveMetrics() {

@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 
 const SERVICES = [
-  { name: 'identity-provider', url: 'http://localhost:3001' },
-  { name: 'order-gateway', url: 'http://localhost:3002' },
-  { name: 'stock-service', url: 'http://localhost:3003' },
-  { name: 'kitchen-queue', url: 'http://localhost:3004' },
-  { name: 'notification-hub', url: 'http://localhost:3005' },
+  { name: 'identity-provider', url: import.meta.env.VITE_IDENTITY_PROVIDER_URL || 'http://localhost:3001' },
+  { name: 'order-gateway', url: import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:3002' },
+  { name: 'stock-service', url: import.meta.env.VITE_STOCK_SERVICE_URL || 'http://localhost:3003' },
+  { name: 'kitchen-queue', url: import.meta.env.VITE_KITCHEN_QUEUE_URL || 'http://localhost:3004' },
+  { name: 'notification-hub', url: import.meta.env.VITE_NOTIFICATION_HUB_URL || 'http://localhost:3005' },
 ]
 
 export default function HealthGrid() {

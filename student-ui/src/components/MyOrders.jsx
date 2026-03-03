@@ -10,7 +10,7 @@ export default function MyOrders({ onSelectOrder }) {
   const fetchOrders = async () => {
     try {
       const token = localStorage.getItem('token')
-      const resp = await axios.get('http://localhost:3002/orders', {
+      const resp = await axios.get(`${import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:3002'}/orders`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       setOrders(resp.data)
