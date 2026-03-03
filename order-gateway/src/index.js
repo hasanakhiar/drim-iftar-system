@@ -136,7 +136,8 @@ async function authMiddleware(req, res, next) {
 // GET /stock - Proxy to stock-service
 app.get('/stock', async (req, res) => {
   try {
-    const resp = await axios.get('http://stock-service:3003/stock', { timeout: 8000 });
+    const STOCK_SERVICE_URL = process.env.STOCK_SERVICE_URL || 'http://stock-service:3003';
+    const resp = await axios.get(`${STOCK_SERVICE_URL}/stock`, { timeout: 8000 });
     return res.json(resp.data);
   } catch (err) {
     return res.status(503).json({ error: 'Stock service unavailable' });
