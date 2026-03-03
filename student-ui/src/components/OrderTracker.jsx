@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { io } from 'socket.io-client'
+import axios from 'axios'
 
 const STATUS_STEPS = [
   { key: 'pending', label: 'Pending' },
@@ -16,10 +17,28 @@ export default function OrderTracker({ orderId }) {
   const [hasAttempted, setHasAttempted] = useState(false)
   const socketRef = useRef(null)
 
+  useEffect(() => {
+    const fetchInitialStatus = async () => {
+      try {
+        const token = localStorage.getItem('token')
+        const resp = await axios.get(
+          `${import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:3002'}/orders/${orderId}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
+        if (resp.data && resp.data.status) {
+          setCurrentStatus(resp.data.status)
+        }
+      } catch (e) {
+        console.error('Failed to fetch initial order status', e)
+      }
+    }
+    fetchInitialStatus()
+  }, [orderId])
+
   const connectSocket = () => {
     if (socketRef.current) socketRef.current.disconnect()
 
-      const socket = io(import.meta.env.VITE_NOTIFICATION_HUB_URL || 'http://localhost:3005', {
+    const socket = io(import.meta.env.VITE_NOTIFICATION_HUB_URL || 'http://localhost:3005', {
       reconnectionAttempts: 10,
       timeout: 5000,
       transports: ['websocket', 'polling']

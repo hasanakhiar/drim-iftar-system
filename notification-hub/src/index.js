@@ -51,11 +51,17 @@ function recordNotification(latency, failed = false) {
   if (metrics.latencies.length > 1000) metrics.latencies.shift();
 }
 
+
 io.on('connection', (socket) => {
   socket.on('subscribe', async (orderId) => {
     if (orderId) {
       socket.join(`order-${orderId}`);
-      const status = await redis.get(`order_status:${orderId}`).catch(() => null);
+      let status = await redis.get(`order_status:${orderId}`).catch(() => null);
+      // If Redis key expired or missing, fall back to MongoDB
+      if (!status) {
+        const order = await Order.findOne({ orderId }).catch(() => null);
+        status = order?.status || null;
+      }
       if (status) socket.emit('order-update', { orderId, status, timestamp: new Date().toISOString() });
     }
   });
