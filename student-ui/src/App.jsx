@@ -98,7 +98,20 @@ export default function App() {
       )}
 
       <header className="nav-bar" style={{ marginTop: !hubOnline ? '2rem' : '0' }}>
-        <h1>🍽️ IUT Cafeteria</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {/* IUT Logo */}
+          <img 
+            src="/iut-logo.png" 
+            alt="IUT Logo" 
+            className="iut-logo"
+            onError={(e) => {
+              e.target.style.display = 'none'
+            }}
+          />
+          <div>
+            <h1 style={{ margin: '0 0 0.25rem 0', fontSize: '1.1rem', color: 'var(--accent)' }}>Islamic University of Technology</h1>
+          </div>
+        </div>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
           <button onClick={toggleTheme} className="theme-toggle" title="Toggle Theme">
             {theme === 'light' ? '🌙' : '☀️'}

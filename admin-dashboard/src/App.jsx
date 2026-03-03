@@ -20,7 +20,17 @@ function App() {
   return (
     <div className="admin-container">
       <aside className="sidebar">
-        <h1>🌙 Iftar Admin</h1>
+        <div className="admin-brand">
+          <img
+            src="/iut-logo.png"
+            alt="IUT Logo"
+            className="admin-iut-logo"
+            onError={(e) => {
+              e.target.style.display = 'none'
+            }}
+          />
+          <h1>🌙 Iftar Admin</h1>
+        </div>
         <nav style={{ display: 'flex', flexDirection: 'column', marginTop: '1rem' }}>
           <button 
             className={`nav-btn ${activeTab === 'overview' ? 'active' : ''}`}
