@@ -11,6 +11,7 @@ export default function App() {
   const [view, setView] = useState('menu')
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light')
   const [hubOnline, setHubOnline] = useState(true)
+  const [orderRefreshKey, setOrderRefreshKey] = useState(0)
   
   // Global Modal State
   const [modal, setModal] = useState({ show: false, title: '', message: '', type: 'info' })
@@ -130,9 +131,9 @@ export default function App() {
       {token && !orderId && (
         <div className="fade-in">
           {view === 'menu' ? (
-            <OrderPlacer onOrderPlaced={setOrderId} showModal={showModal} />
+            <OrderPlacer onOrderPlaced={(id) => { setOrderId(id); setOrderRefreshKey(k => k + 1); }} showModal={showModal} />
           ) : (
-            <MyOrders onSelectOrder={setOrderId} />
+            <MyOrders onSelectOrder={setOrderId} view={view} orderRefreshKey={orderRefreshKey} />
           )}
         </div>
       )}

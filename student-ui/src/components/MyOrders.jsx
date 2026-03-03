@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 
-export default function MyOrders({ onSelectOrder }) {
+export default function MyOrders({ onSelectOrder, view, orderRefreshKey }) {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
@@ -22,8 +22,10 @@ export default function MyOrders({ onSelectOrder }) {
   }
 
   useEffect(() => {
-    fetchOrders()
-  }, [])
+    if (view === 'history') {
+      fetchOrders()
+    }
+  }, [view, orderRefreshKey])
 
   if (loading) return <div style={{ color: 'var(--text-main)' }}>Loading orders...</div>
 
@@ -82,7 +84,7 @@ export default function MyOrders({ onSelectOrder }) {
             className="hover-card"
           >
             <div>
-              <div style={{ fontWeight: '700', color: 'var(--text-main)', fontSize: '1.05rem' }}>{order.itemId}</div>
+              <div style={{ fontWeight: '700', color: 'var(--text-main)', fontSize: '1.05rem' }}>{order.itemName || order.itemId}</div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
                 {new Date(order.createdAt).toLocaleString()}
               </div>
