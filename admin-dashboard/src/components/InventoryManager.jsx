@@ -12,7 +12,7 @@ export default function InventoryManager() {
 
   const fetchStock = async () => {
     try {
-      const resp = await axios.get('http://localhost:3003/stock')
+      const resp = await axios.get(`${import.meta.env.VITE_STOCK_SERVICE_URL || 'http://localhost:3003'}/stock`)
       setItems(resp.data)
     } catch (e) {
       console.error('Failed to fetch stock')
@@ -43,7 +43,7 @@ export default function InventoryManager() {
   const executeSubmit = async () => {
     setLoading(true)
     try {
-      await axios.post('http://localhost:3003/stock', formData)
+      await axios.post(`${import.meta.env.VITE_STOCK_SERVICE_URL || 'http://localhost:3003'}/stock`, formData)
       setFormData({ itemId: '', name: '', stock: 0 })
       setIsEditing(false)
       setModal({ 
@@ -85,7 +85,7 @@ export default function InventoryManager() {
   const executeDelete = async (item) => {
     setLoading(true)
     try {
-      await axios.delete(`http://localhost:3003/stock/${item.itemId}`)
+      await axios.delete(`${import.meta.env.VITE_STOCK_SERVICE_URL || 'http://localhost:3003'}/stock/${item.itemId}`)
       setModal({ 
         show: true, 
         title: '🗑️ Deleted', 

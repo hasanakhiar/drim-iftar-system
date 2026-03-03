@@ -28,8 +28,7 @@ export default function OrderPlacer({ onOrderPlaced, showModal }) {
     setLoading(true)
     try {
       const token = localStorage.getItem('token')
-        const resp = await axios.post(
-        `${import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:3002'}/orders`,
+        const resp = await axios.post(`${import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:3002'}/orders`,
         { itemId, quantity },
         { headers: { Authorization: `Bearer ${token}` } }
       )
