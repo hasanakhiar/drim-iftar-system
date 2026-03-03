@@ -8,7 +8,7 @@ export default function OrderHistory() {
 
   const fetchOrders = async () => {
     try {
-      const resp = await axios.get('http://localhost:3002/admin/orders')
+      const resp = await axios.get(`${import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:3002'}/admin/orders`)
       setOrders(resp.data)
     } catch (e) {
       console.error('Failed to fetch orders')

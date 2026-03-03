@@ -23,7 +23,7 @@ export default function App() {
   useEffect(() => {
     const checkHub = async () => {
       try {
-        await axios.get('http://localhost:3005/health', { timeout: 2000 })
+        await axios.get(`${import.meta.env.VITE_NOTIFICATION_HUB_URL || 'http://localhost:3005'}/health`, { timeout: 2000 })
         setHubOnline(true)
       } catch (e) {
         setHubOnline(false)

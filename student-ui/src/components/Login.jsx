@@ -10,7 +10,7 @@ export default function Login({ setToken, showModal }) {
     e.preventDefault()
     setLoading(true)
     try {
-      const { data } = await axios.post('http://localhost:3001/auth/login', {
+        const { data } = await axios.post(`${import.meta.env.VITE_IDENTITY_PROVIDER_URL || 'http://localhost:3001'}/auth/login`, {
         studentId,
         password,
       })

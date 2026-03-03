@@ -19,7 +19,7 @@ export default function OrderTracker({ orderId }) {
   const connectSocket = () => {
     if (socketRef.current) socketRef.current.disconnect()
 
-    const socket = io('http://localhost:3005', {
+      const socket = io(import.meta.env.VITE_NOTIFICATION_HUB_URL || 'http://localhost:3005', {
       reconnectionAttempts: 10,
       timeout: 5000,
       transports: ['websocket', 'polling']
